@@ -3113,14 +3113,14 @@ async def test_send_with_retry_calls_send_delta():
 
 
 @pytest.mark.asyncio
-async def test_send_with_retry_skips_send_when_streamed():
-    """_send_with_retry should not call send for streamed response events."""
-    send_called = False
+async def test_send_with_retry_only_sends_websocket_streamed_event_with_media():
+    """流式文本尾包跳过发送，但 WebSocket 媒体尾包必须继续投递。"""
+    sent_message: OutboundMessage | None = None
     send_delta_called = False
 
     class _StreamedChannel(BaseChannel):
-        name = "streamed"
-        display_name = "Streamed"
+        name = "websocket"
+        display_name = "WebSocket"
 
         async def start(self) -> None:
             pass
@@ -3129,8 +3129,8 @@ async def test_send_with_retry_skips_send_when_streamed():
             pass
 
         async def send(self, msg: OutboundMessage) -> None:
-            nonlocal send_called
-            send_called = True
+            nonlocal sent_message
+            sent_message = msg
 
         async def send_delta(
             self,
@@ -3153,18 +3153,26 @@ async def test_send_with_retry_skips_send_when_streamed():
     mgr = ChannelManager.__new__(ChannelManager)
     mgr.config = fake_config
     mgr.bus = MessageBus()
-    mgr.channels = {"streamed": _StreamedChannel(fake_config, mgr.bus)}
+    mgr.channels = {"websocket": _StreamedChannel(fake_config, mgr.bus)}
     mgr._dispatch_task = None
 
     msg = outbound_message_for_event(
-        channel="streamed",
+        channel="websocket",
         chat_id="123",
         event=StreamedResponseEvent(),
         content="test",
     )
-    await mgr._send_with_retry(mgr.channels["streamed"], msg)
+    await mgr._send_with_retry(mgr.channels["websocket"], msg)
 
-    assert send_called is False
+    assert sent_message is None
+    assert send_delta_called is False
+
+    msg.media = ["/tmp/generated.png"]
+    await mgr._send_with_retry(mgr.channels["websocket"], msg)
+
+    assert sent_message is not None
+    assert sent_message.content == ""
+    assert sent_message.media == ["/tmp/generated.png"]
     assert send_delta_called is False
 
 

@@ -81,6 +81,7 @@ from nanobot.session.model_selection import (
 )
 from nanobot.session.summary import SessionSummary
 from nanobot.triggers.local_turns import LocalTriggerTurnCoordinator
+from nanobot.utils.artifacts import generated_image_paths_from_messages
 from nanobot.utils.cancellation import task_is_cancelling
 from nanobot.utils.document import reference_non_image_attachments
 from nanobot.utils.helpers import image_placeholder_text
@@ -137,6 +138,7 @@ class TurnContext:
     save_skip: int = 0
 
     outbound: OutboundMessage | None = None
+    generated_media: list[str] = field(default_factory=list)
     suppress_response: bool = False
 
     on_progress: Callable[..., Awaitable[None]] | None = None
@@ -1657,6 +1659,7 @@ class AgentLoop:
         stop_reason: str,
         had_injections: bool,
         streamed_content: bool,
+        generated_media: list[str],
         *,
         log_content: bool = True,
         turn_latency_ms: int | None = None,
@@ -1685,6 +1688,7 @@ class AgentLoop:
             chat_id=msg.chat_id,
             content=final_content,
             event=event,
+            media=generated_media,
             metadata=meta,
         )
 
@@ -1950,6 +1954,9 @@ class AgentLoop:
         final_content, _, all_msgs, stop_reason, had_injections = result
         ctx.final_content = final_content
         ctx.all_messages = all_msgs
+        ctx.generated_media = generated_image_paths_from_messages(
+            all_msgs[len(ctx.initial_messages):]
+        )
         ctx.stop_reason = stop_reason
         ctx.had_injections = had_injections
         ctx.usage = dict(self._last_usage)
@@ -1981,6 +1988,18 @@ class AgentLoop:
         ctx.turn_latency_ms = max(0, int((time.time() - latency_started_at) * 1000))
         if ctx.usage and not ctx.ephemeral:
             session.metadata["_last_usage"] = dict(ctx.usage)
+        message_tool = self.tools.get("message")
+        delivered_by_message_tool = (
+            isinstance(message_tool, MessageTool) and message_tool._sent_in_turn
+        )
+        if ctx.generated_media and not delivered_by_message_tool:
+            for message in reversed(ctx.all_messages):
+                if message.get("role") != "assistant" or not message.get("content"):
+                    continue
+                existing = message.get("media")
+                media = existing if isinstance(existing, list) else []
+                message["media"] = list(dict.fromkeys([*media, *ctx.generated_media]))
+                break
         self._save_turn(
             session, ctx.all_messages, ctx.save_skip,
             turn_latency_ms=ctx.turn_latency_ms,
@@ -2022,6 +2041,7 @@ class AgentLoop:
             ctx.stop_reason,
             ctx.had_injections,
             ctx.streamed_content,
+            ctx.generated_media,
             log_content=ctx.require_session().policy.log_content,
             turn_latency_ms=ctx.turn_latency_ms,
         )

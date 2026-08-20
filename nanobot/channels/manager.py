@@ -7,6 +7,7 @@ import hashlib
 import inspect
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from contextlib import suppress
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -843,7 +844,10 @@ class ChannelManager:
             await ChannelManager._send_stream_event(channel, msg, event)
         elif isinstance(event, StreamEndEvent):
             await ChannelManager._send_stream_event(channel, msg, event)
-        elif not isinstance(event, StreamedResponseEvent):
+        elif isinstance(event, StreamedResponseEvent):
+            if msg.channel == "websocket" and msg.media:
+                await channel.send(replace(msg, content=""))
+        else:
             await channel.send(msg)
 
     def _coalesce_stream_deltas(

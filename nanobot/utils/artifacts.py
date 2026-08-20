@@ -120,3 +120,30 @@ def generated_image_tool_result(artifacts: list[dict[str, Any]]) -> str:
         },
         ensure_ascii=False,
     )
+
+
+def generated_image_paths_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    """从本轮 generate_image 工具结果中提取去重后的图像路径。"""
+    paths: list[str] = []
+    seen: set[str] = set()
+    for message in messages:
+        if message.get("role") != "tool" or message.get("name") != "generate_image":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+        if not isinstance(artifacts, list):
+            continue
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            path = artifact.get("path")
+            if isinstance(path, str) and path and path not in seen:
+                paths.append(path)
+                seen.add(path)
+    return paths

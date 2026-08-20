@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { StrictMode, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -614,6 +615,7 @@ describe("ThreadShell", () => {
   });
 
   it("switches through every named preset while preserving call-order priority", async () => {
+    const user = userEvent.setup();
     const client = makeClient();
     const settings = settingsWithFastPreset();
     settings.model_presets.push({
@@ -637,23 +639,22 @@ describe("ThreadShell", () => {
     ));
     const { rerender } = render(view("default"));
 
-    const badge = await screen.findByRole("spinbutton", { name: "Default" });
+    const badge = await screen.findByRole("button", { name: "Choose model" });
     expect(badge).toHaveTextContent("Default");
-    fireEvent.keyDown(badge, { key: "ArrowDown" });
+    await user.click(badge);
+    await user.click(await screen.findByRole("menuitem", { name: /fast/i }));
 
-    expect(client.sendSystemCommand).toHaveBeenCalledWith(
+    await waitFor(() => expect(client.sendSystemCommand).toHaveBeenCalledWith(
       "preset-order",
       "/model fast",
-    );
+    ));
     expect(await screen.findByText("fast")).toBeInTheDocument();
-    fireEvent.keyDown(
-      screen.getByRole("spinbutton", { name: "fast" }),
-      { key: "End" },
-    );
-    expect(client.sendSystemCommand).toHaveBeenLastCalledWith(
+    await user.click(screen.getByRole("button", { name: "Choose model" }));
+    await user.click(await screen.findByRole("menuitem", { name: /extra/i }));
+    await waitFor(() => expect(client.sendSystemCommand).toHaveBeenLastCalledWith(
       "preset-order",
       "/model extra",
-    );
+    ));
     expect(await screen.findByText("extra")).toBeInTheDocument();
 
     rerender(view("fast"));
@@ -1044,6 +1045,7 @@ describe("ThreadShell", () => {
   });
 
   it("applies the selected landing preset before sending the first prompt", async () => {
+    const user = userEvent.setup();
     const client = makeClient();
     const settings = settingsWithFastPreset();
     settings.model_call_order = ["fast"];
@@ -1066,10 +1068,8 @@ describe("ThreadShell", () => {
     ));
     const { rerender } = render(view(null));
 
-    fireEvent.keyDown(
-      await screen.findByRole("spinbutton", { name: "Default" }),
-      { key: "ArrowDown" },
-    );
+    await user.click(await screen.findByRole("button", { name: "Choose model" }));
+    await user.click(await screen.findByRole("menuitem", { name: /fast/i }));
     expect(await screen.findByText("fast")).toBeInTheDocument();
     expect(client.sendSystemCommand).not.toHaveBeenCalled();
 

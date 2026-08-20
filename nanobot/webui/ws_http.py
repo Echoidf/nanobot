@@ -112,9 +112,12 @@ from nanobot.webui.sidebar_state import (
     write_webui_sidebar_state,
 )
 from nanobot.webui.skills_api import (
+    DEFAULT_LOCAL_SKILLS_PATH,
     SkillManagementError,
     delete_webui_skill,
+    import_webui_local_skills,
     set_webui_skill_enabled,
+    webui_local_skills_payload,
     webui_skill_detail_payload,
     webui_skills_payload,
 )
@@ -141,6 +144,7 @@ _WEBUI_MUTATION_PATHS = {
     "automation.run": "/api/webui/automations/run",
     "automation.update": "/api/webui/automations/update",
     "skill.install": "/api/webui/skills/install",
+    "skill.import_local": "/api/webui/skills/import-local",
     "skill.update": "/api/webui/skills/update",
     "skill.delete": "/api/webui/skills/delete",
     "sidebar.update": "/api/webui/sidebar-state/update",
@@ -456,6 +460,7 @@ class GatewayHTTPHandler:
             return True
         return path in {
             "/api/webui/skills/install",
+            "/api/webui/skills/import-local",
             "/api/webui/skills/update",
             "/api/webui/skills/delete",
             "/api/webui/sidebar-state/update",
@@ -1121,8 +1126,12 @@ class GatewayHTTPHandler:
             return await self._handle_webui_skills_trending(request)
         if got == "/api/webui/skills/trends":
             return await self._handle_webui_skill_trends(request)
+        if got == "/api/webui/skills/local":
+            return self._handle_webui_local_skills(connection, request)
         if got == "/api/webui/skills/install":
             return await self._handle_webui_skill_install(connection, request)
+        if got == "/api/webui/skills/import-local":
+            return await self._handle_webui_skill_import_local(connection, request)
         if got == "/api/webui/skills/update":
             return self._handle_webui_skill_update(request)
         if got == "/api/webui/skills/delete":
@@ -1229,6 +1238,65 @@ class GatewayHTTPHandler:
             self._log.exception("skills.sh trend history lookup failed")
             return _http_error(500, "skills.sh trend history lookup failed")
         return _http_json_response(payload)
+
+    def _handle_webui_local_skills(
+        self,
+        connection: Any,
+        request: WsRequest,
+    ) -> Response:
+        """List importable skills from a local directory for trusted local clients."""
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        if not _is_local_browser_request(connection, request.headers):
+            return _http_error(403, "remote local-skill access is disabled")
+        source_path = (
+            _query_first(_parse_query(request.path), "path") or DEFAULT_LOCAL_SKILLS_PATH
+        )
+        try:
+            payload = webui_local_skills_payload(
+                self.skills_workspace_path,
+                source_path=source_path,
+            )
+        except SkillManagementError as exc:
+            return _http_error(exc.status, exc.message)
+        return _http_json_response(payload)
+
+    async def _handle_webui_skill_import_local(
+        self,
+        connection: Any,
+        request: WsRequest,
+    ) -> Response:
+        """Create workspace symlinks for selected skills from a local directory."""
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        if not _is_local_browser_request(connection, request.headers):
+            return _http_error(403, "remote local-skill import is disabled")
+        if self._skill_install_lock.locked():
+            return _http_error(409, "another skill installation is already in progress")
+        payload = _mutation_payload(request) or {}
+        source_path = payload.get("source_path", DEFAULT_LOCAL_SKILLS_PATH)
+        names = payload.get("names")
+        if not isinstance(source_path, str):
+            return _http_error(400, "source_path must be a string")
+        if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
+            return _http_error(400, "names must be a list of skill names")
+
+        async with self._skill_install_lock:
+            try:
+                action = import_webui_local_skills(
+                    self.skills_workspace_path,
+                    cast(list[str], names),
+                    source_path=source_path,
+                )
+            except SkillManagementError as exc:
+                return _http_error(exc.status, exc.message)
+        return _http_json_response({
+            **webui_skills_payload(
+                self.skills_workspace_path,
+                disabled_skills=self.disabled_skills,
+            ),
+            "last_action": action,
+        })
 
     async def _handle_webui_skill_install(
         self,

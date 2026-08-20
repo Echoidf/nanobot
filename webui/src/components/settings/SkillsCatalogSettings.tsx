@@ -4,6 +4,7 @@ import {
   Check,
   CircleAlert,
   Copy,
+  FolderInput,
   KeyRound,
   Loader2,
   PowerOff,
@@ -28,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { LocalSkillImportDialog } from "@/components/settings/LocalSkillImportDialog";
 import { SkillsMarketplace } from "@/components/settings/SkillsMarketplace";
 import { deleteSkill, fetchSkillDetail, updateSkillEnabled } from "@/lib/api";
 import { notifySkillsChanged } from "@/lib/skill-events";
@@ -40,6 +42,7 @@ export function SkillsCatalogSettings({ skills }: { skills: SkillSummary[] }) {
   const [selectedSkill, setSelectedSkill] = useState<SkillSummary | null>(null);
   const [view, setView] = useState<"installed" | "discover">("installed");
   const [installingSkill, setInstallingSkill] = useState("");
+  const [localImportOpen, setLocalImportOpen] = useState(false);
   const [installedQuery, setInstalledQuery] = useState("");
   const [installedFilter, setInstalledFilter] = useState<"all" | "enabled" | "disabled">(
     "all",
@@ -117,32 +120,43 @@ export function SkillsCatalogSettings({ skills }: { skills: SkillSummary[] }) {
                 className="h-9 bg-background pl-9 text-[13px]"
               />
             </div>
-            <SegmentedControl
-              value={installedFilter}
-              className="sm:w-auto"
-              itemClassName="px-2.5 text-[11px]"
-              options={([
-                ["all", t("settings.skills.filterAll", { defaultValue: "All" }), skills.length],
-                [
-                  "enabled",
-                  t("settings.skills.filterEnabled", { defaultValue: "Enabled" }),
-                  skills.length - disabledCount,
-                ],
-                [
-                  "disabled",
-                  t("settings.skills.filterDisabled", { defaultValue: "Disabled" }),
-                  disabledCount,
-                ],
-              ] as const).map(([value, label, count]) => ({
-                value,
-                label: (
-                  <>
-                    {label} <span className="ml-0.5 tabular-nums opacity-65">{count}</span>
-                  </>
-                ),
-              }))}
-              onChange={setInstalledFilter}
-            />
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+              <SegmentedControl
+                value={installedFilter}
+                className="w-full sm:w-auto"
+                itemClassName="px-2.5 text-[11px]"
+                options={([
+                  ["all", t("settings.skills.filterAll", { defaultValue: "All" }), skills.length],
+                  [
+                    "enabled",
+                    t("settings.skills.filterEnabled", { defaultValue: "Enabled" }),
+                    skills.length - disabledCount,
+                  ],
+                  [
+                    "disabled",
+                    t("settings.skills.filterDisabled", { defaultValue: "Disabled" }),
+                    disabledCount,
+                  ],
+                ] as const).map(([value, label, count]) => ({
+                  value,
+                  label: (
+                    <>
+                      {label} <span className="ml-0.5 tabular-nums opacity-65">{count}</span>
+                    </>
+                  ),
+                }))}
+                onChange={setInstalledFilter}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setLocalImportOpen(true)}
+                className="h-9 shrink-0 rounded-full px-3"
+              >
+                <FolderInput className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                {t("settings.skills.localImportButton", { defaultValue: "Import local" })}
+              </Button>
+            </div>
           </div>
           {groupedSkills.length ? (
             <div className="space-y-5 px-3 pb-3 pt-2 sm:px-4">
@@ -191,6 +205,7 @@ export function SkillsCatalogSettings({ skills }: { skills: SkillSummary[] }) {
           if (!open) setSelectedSkill(null);
         }}
       />
+      <LocalSkillImportDialog open={localImportOpen} onOpenChange={setLocalImportOpen} />
     </div>
   );
 }
@@ -544,7 +559,7 @@ function SkillDetailSheet({
             <AlertDialogDescription>
               {t("settings.skills.deleteConfirmDescription", {
                 defaultValue:
-                  "This removes the skill files from the current workspace. This action cannot be undone.",
+                  "This removes the skill from the current workspace. This action cannot be undone.",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>

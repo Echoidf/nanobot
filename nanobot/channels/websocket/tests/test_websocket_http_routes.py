@@ -896,6 +896,44 @@ async def test_webui_skill_install_rejects_overlapping_requests(
 
 
 @pytest.mark.asyncio
+async def test_webui_local_skill_import_is_local_only(
+    bus: MagicMock,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "local-skills"
+    skill_dir = source / "local-demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: local-demo\ndescription: Local demo skill.\n---\n",
+        encoding="utf-8",
+    )
+    channel = _ch(
+        bus,
+        session_manager=_seed_session(tmp_path),
+        workspace_path=tmp_path,
+        port=_free_port(),
+    )
+
+    denied = await _webui_mutate(
+        channel,
+        "skill.import_local",
+        {"source_path": str(source), "names": ["local-demo"]},
+        connection=_REMOTE,
+    )
+    assert denied.status_code == 403
+    assert "remote local-skill import is disabled" in denied.text
+
+    imported = await _webui_mutate(
+        channel,
+        "skill.import_local",
+        {"source_path": str(source), "names": ["local-demo"]},
+    )
+    assert imported.status_code == 200
+    assert imported.json()["last_action"]["imported"] == ["local-demo"]
+    assert (tmp_path / "skills" / "local-demo").is_symlink()
+
+
+@pytest.mark.asyncio
 async def test_webui_skill_delete_remains_local_only(
     bus: MagicMock,
     tmp_path: Path,

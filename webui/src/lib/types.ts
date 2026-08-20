@@ -231,6 +231,25 @@ export interface SkillDetail extends SkillSummary {
 
 export interface SkillsPayload { skills: SkillSummary[]; }
 
+export interface LocalSkillCandidate {
+  name: string;
+  description: string;
+  already_imported: boolean;
+}
+
+export interface LocalSkillsPayload {
+  source_path: string;
+  skills: LocalSkillCandidate[];
+}
+
+export interface SkillLocalImportPayload extends SkillsPayload {
+  last_action: {
+    source_path: string;
+    imported: string[];
+    skipped: Array<{ name: string; reason: string }>;
+  };
+}
+
 export interface SkillActionPayload extends SkillsPayload {
   last_action: {
     name: string;

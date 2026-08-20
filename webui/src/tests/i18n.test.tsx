@@ -294,42 +294,6 @@ const LOCALIZED_NEW_SURFACE_KEYS = [
   "settings.channels.connectionChecks",
   "settings.channels.open",
 ];
-const ACCIDENTALLY_SPANISH_SETTINGS_KEYS = [
-  "settings.help.provider",
-  "settings.help.configPath",
-  "settings.help.selectedPreset",
-  "settings.help.maxResults",
-  "settings.help.timeout",
-  "settings.help.jinaReader",
-  "settings.help.imageGeneration",
-  "settings.help.imageProvider",
-  "settings.help.imageProviderStatus",
-  "settings.help.imageModel",
-  "settings.help.defaultAspectRatio",
-  "settings.help.timezone",
-  "settings.help.securityManagedControls",
-  "settings.help.selectedModelProvider",
-  "settings.help.selectedModelValue",
-  "settings.help.cliAppsCatalog",
-  "settings.help.cliAppsFilter",
-  "settings.help.logs",
-  "settings.help.diagnostics",
-  "settings.help.localServiceAccessNative",
-  "settings.help.webuiDefaultAccessNative",
-  "settings.status.savedRestart",
-  "settings.status.restartAfterSaving",
-  "settings.status.savedRestartApply",
-  "settings.status.imageProviderRestart",
-  "settings.status.hostRestartAfterSaving",
-  "settings.status.hostRestartPending",
-  "settings.status.hostApiUnavailable",
-  "settings.status.logsOpened",
-  "settings.status.logsOpenFailed",
-  "settings.status.diagnosticsExported",
-  "settings.status.diagnosticsExportFailed",
-  "settings.image.missingCredential",
-  "settings.oauth.signInHelp",
-];
 const INDEX_HTML = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 const PREBOOT_SCRIPT = INDEX_HTML.match(
   /<script>\s*(\(function \(\) \{\s*var localeKey = "nanobot\.locale";[\s\S]*?\}\)\(\);)\s*<\/script>/,
@@ -419,24 +383,29 @@ describe("webui i18n", () => {
     }
   });
 
-  it("normalizes Portuguese locales before the app bundle loads", () => {
-    const expected = resources["pt-BR"].common.app;
+  it("maps Chinese locale variants to Simplified Chinese before the app bundle loads", () => {
+    const expected = resources["zh-CN"].common.app;
 
-    for (const locale of ["pt", "pt-PT"]) {
+    for (const locale of ["zh", "zh-TW", "zh-HK", "zh-Hant"]) {
       expect(runPrebootLocale(locale)).toEqual({
-        lang: "pt-BR",
+        lang: "zh-CN",
         boot: expected.loading.boot,
         description: expected.meta.description,
       });
     }
   });
 
-  it("defaults to English until the user chooses another language", () => {
+  it("supports only English and Simplified Chinese", () => {
+    expect(supportedLocales.map(({ code }) => code)).toEqual(["en", "zh-CN"]);
+
     localStorage.removeItem(LOCALE_STORAGE_KEY);
     expect(resolveInitialLocale()).toBe("en");
 
     localStorage.setItem(LOCALE_STORAGE_KEY, "zh-CN");
     expect(resolveInitialLocale()).toBe("zh-CN");
+
+    localStorage.setItem(LOCALE_STORAGE_KEY, "fr");
+    expect(resolveInitialLocale()).toBe("en");
   });
 
   it("switches UI copy and document locale through the language switcher", async () => {
@@ -469,10 +438,10 @@ describe("webui i18n", () => {
 
     await act(async () => {
       const { setAppLanguage } = await import("@/i18n");
-      await setAppLanguage("ja");
+      await setAppLanguage("zh-CN");
     });
 
-    expect(screen.getByLabelText("メッセージ入力欄")).toBeInTheDocument();
+    expect(screen.getByLabelText("消息输入框")).toBeInTheDocument();
   });
 
   it("keeps empty landing resources localized for every registered locale", () => {
@@ -610,29 +579,4 @@ describe("webui i18n", () => {
     expect(workbench.detachPane).toBe("移出");
   });
 
-  it("keeps Indonesian and Vietnamese settings free of copied Spanish help text", () => {
-    const spanish = flattenResource(resources.es.common);
-
-    for (const locale of ["id", "vi"] as const) {
-      const current = flattenResource(resources[locale].common);
-      const copied = ACCIDENTALLY_SPANISH_SETTINGS_KEYS.filter(
-        (key) => current.get(key) === spanish.get(key),
-      );
-      expect({ locale, copied }).toEqual({ locale, copied: [] });
-    }
-  });
-
-  it("keeps Brazilian Portuguese settings overview copy localized", () => {
-    const settings = resources["pt-BR"].common.settings;
-    const sidebar = resources["pt-BR"].common.sidebar;
-    const chat = resources["pt-BR"].common.chat;
-
-    expect(sidebar.settings).toBe("Configurações");
-    expect(chat.newChat).toBe("Novo tópico");
-    expect(settings.nav.browser).toBe("Web");
-    expect(settings.sections.webSearch).toBe("Busca na web");
-    expect(settings.byok.tabs.webSearch).toBe("Busca na web");
-    expect(settings.overview.webSearch).toBe("Busca na web");
-    expect(settings.overview.workspace).toBe("Espaço de trabalho");
-  });
 });

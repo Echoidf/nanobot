@@ -1012,6 +1012,99 @@ describe("App layout", () => {
     });
   });
 
+  it("imports selected local skills as workspace entries", async () => {
+    mockFetchRoutes({
+      "/api/settings": baseSettingsPayload(),
+      "/api/settings/cli-apps": { apps: [], installed_count: 0, catalog_updated_at: "2026-04-18" },
+      "/api/settings/mcp-presets": { presets: [], installed_count: 0 },
+      "/api/webui/skills": {
+        skills: [
+          {
+            name: "cron",
+            description: "Schedule reminders.",
+            source: "builtin",
+            enabled: true,
+            deletable: false,
+            available: true,
+          },
+        ],
+      },
+      "/api/webui/skills/local?path=%7E%2F.agents%2Fskills%2F": {
+        source_path: "~/.agents/skills/",
+        skills: [
+          { name: "alpha", description: "Alpha skill.", already_imported: false },
+          { name: "beta", description: "Beta skill.", already_imported: false },
+          { name: "existing", description: "Existing skill.", already_imported: true },
+        ],
+      },
+    });
+    requestMutationSpy.mockResolvedValueOnce({
+      skills: [
+        {
+          name: "alpha",
+          description: "Alpha skill.",
+          source: "workspace",
+          enabled: true,
+          deletable: true,
+          available: true,
+        },
+        {
+          name: "beta",
+          description: "Beta skill.",
+          source: "workspace",
+          enabled: true,
+          deletable: true,
+          available: true,
+        },
+        {
+          name: "cron",
+          description: "Schedule reminders.",
+          source: "builtin",
+          enabled: true,
+          deletable: false,
+          available: true,
+        },
+      ],
+      last_action: {
+        source_path: "~/.agents/skills/",
+        imported: ["alpha", "beta"],
+        skipped: [],
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(connectSpy).toHaveBeenCalled());
+    const sidebar = screen.getByRole("navigation", { name: "Sidebar navigation" });
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import local" }));
+
+    expect(await screen.findByRole("heading", { name: "Import local skills" })).toBeInTheDocument();
+    const alpha = screen.getByRole("checkbox", { name: /alpha/i });
+    const beta = screen.getByRole("checkbox", { name: /beta/i });
+    const existing = screen.getByRole("checkbox", { name: /existing/i });
+    expect(existing).toBeDisabled();
+    fireEvent.click(alpha);
+    fireEvent.click(beta);
+    fireEvent.click(screen.getByRole("button", { name: "Import selected (2)" }));
+
+    await waitFor(() => {
+      expect(requestMutationSpy).toHaveBeenCalledWith(
+        "skill.import_local",
+        {
+          source_path: "~/.agents/skills/",
+          names: ["alpha", "beta"],
+        },
+        20_000,
+      );
+    });
+    expect(await screen.findByText("Imported 2 skills. Skipped 0.")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Import local skills" });
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Close" })[0]);
+    expect(await screen.findByRole("button", { name: "Open details for alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open details for beta" })).toBeInTheDocument();
+  });
+
   it("deletes a custom skill from its detail sheet", async () => {
     mockFetchRoutes({
       "/api/settings": baseSettingsPayload(),

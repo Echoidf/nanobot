@@ -8,7 +8,9 @@ from nanobot.config.schema import Config
 from nanobot.webui.skills_api import (
     SkillManagementError,
     delete_webui_skill,
+    import_webui_local_skills,
     set_webui_skill_enabled,
+    webui_local_skills_payload,
     webui_skill_detail_payload,
     webui_skills_payload,
 )
@@ -30,6 +32,158 @@ def _config(*disabled: str) -> SimpleNamespace:
             defaults=SimpleNamespace(disabled_skills=list(disabled)),
         )
     )
+
+
+def test_local_skills_are_linked_and_existing_workspace_entries_are_skipped(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    source = tmp_path / "local-skills"
+    for name, description in (
+        ("alpha", "Alpha skill."),
+        ("beta", "Beta skill."),
+        ("cron", "Conflicts with built-in."),
+    ):
+        skill_dir = source / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n",
+            encoding="utf-8",
+        )
+    _write_skill(workspace, "beta")
+
+    payload = webui_local_skills_payload(workspace, source_path=str(source))
+
+    assert payload == {
+        "source_path": str(source),
+        "skills": [
+            {
+                "name": "alpha",
+                "description": "Alpha skill.",
+                "already_imported": False,
+            },
+            {
+                "name": "beta",
+                "description": "Beta skill.",
+                "already_imported": True,
+            },
+            {
+                "name": "cron",
+                "description": "Conflicts with built-in.",
+                "already_imported": True,
+            },
+        ],
+    }
+
+    action = import_webui_local_skills(
+        workspace,
+        ["alpha", "beta", "cron"],
+        source_path=str(source),
+    )
+
+    linked = workspace / "skills" / "alpha"
+    assert action == {
+        "source_path": str(source),
+        "imported": ["alpha"],
+        "skipped": [
+            {"name": "beta", "reason": "already_exists"},
+            {"name": "cron", "reason": "already_exists"},
+        ],
+    }
+    assert linked.is_symlink()
+    assert linked.resolve() == (source / "alpha").resolve()
+
+
+def test_local_skill_scan_skips_symlinks_that_escape_source_root(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    source = tmp_path / "local-skills"
+    outside = tmp_path / "outside-skill"
+    source.mkdir()
+    outside.mkdir()
+    (outside / "SKILL.md").write_text(
+        "---\nname: escaped\ndescription: Escaped skill.\n---\n",
+        encoding="utf-8",
+    )
+    try:
+        (source / "escaped").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink unavailable: {exc}")
+
+    payload = webui_local_skills_payload(workspace, source_path=str(source))
+
+    assert payload["skills"] == []
+
+
+def test_local_skill_import_rolls_back_links_when_batch_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    source = tmp_path / "local-skills"
+    for name in ("alpha", "beta"):
+        skill_dir = source / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {name} skill.\n---\n",
+            encoding="utf-8",
+        )
+    original_symlink_to = Path.symlink_to
+
+    def fail_second_link(
+        path: Path,
+        target: Path,
+        target_is_directory: bool = False,
+    ) -> None:
+        if path.name == "beta":
+            raise OSError("link failed")
+        original_symlink_to(path, target, target_is_directory=target_is_directory)
+
+    monkeypatch.setattr(Path, "symlink_to", fail_second_link)
+
+    with pytest.raises(SkillManagementError, match="could not link skill beta"):
+        import_webui_local_skills(
+            workspace,
+            ["alpha", "beta"],
+            source_path=str(source),
+        )
+
+    assert not (workspace / "skills" / "alpha").exists()
+    assert not (workspace / "skills" / "alpha").is_symlink()
+
+
+def test_deleting_imported_skill_removes_only_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    source = tmp_path / "local-skills"
+    source_skill = source / "linked-skill"
+    source_skill.mkdir(parents=True)
+    (source_skill / "SKILL.md").write_text(
+        "---\nname: linked-skill\ndescription: Linked skill.\n---\n",
+        encoding="utf-8",
+    )
+    import_webui_local_skills(
+        workspace,
+        ["linked-skill"],
+        source_path=str(source),
+    )
+    moved_source = tmp_path / "moved-linked-skill"
+    source_skill.rename(moved_source)
+    config = _config()
+    monkeypatch.setattr("nanobot.webui.skills_api.load_config", lambda _path=None: config)
+    monkeypatch.setattr("nanobot.webui.skills_api.save_config", lambda *_args: None)
+
+    action = delete_webui_skill(
+        workspace,
+        "linked-skill",
+        disabled_skills=set(),
+    )
+
+    assert action["deleted"] is True
+    assert not (workspace / "skills" / "linked-skill").is_symlink()
+    assert moved_source.is_dir()
+    assert (moved_source / "SKILL.md").is_file()
 
 
 def test_disabled_skills_remain_visible_and_loadable(tmp_path: Path) -> None:

@@ -8,9 +8,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 
-from nanobot.agent.skills import SkillsLoader
+from nanobot.agent.skills import SkillsLoader, parse_skill_metadata, valid_skill_metadata
 from nanobot.config.loader import load_config, save_config
 from nanobot.security.workspace_policy import WorkspaceBoundaryError, require_path_within
+
+
+DEFAULT_LOCAL_SKILLS_PATH = "~/.agents/skills/"
 
 
 class SkillManagementError(Exception):
@@ -20,6 +23,87 @@ class SkillManagementError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
+
+
+def webui_local_skills_payload(
+    workspace_path: Path,
+    *,
+    source_path: str = DEFAULT_LOCAL_SKILLS_PATH,
+) -> dict[str, Any]:
+    """List valid skills that can be linked from a local skills directory."""
+    _, skills_root, entries = _local_skill_entries(workspace_path, source_path)
+    existing_names = {
+        entry["name"]
+        for entry in SkillsLoader(workspace_path).list_skills(filter_unavailable=False)
+    }
+    return {
+        "source_path": source_path.strip() or DEFAULT_LOCAL_SKILLS_PATH,
+        "skills": [
+            {
+                "name": entry["name"],
+                "description": entry["description"],
+                "already_imported": (
+                    entry["name"] in existing_names
+                    or _path_exists(skills_root / entry["name"])
+                ),
+            }
+            for entry in entries
+        ],
+    }
+
+
+def import_webui_local_skills(
+    workspace_path: Path,
+    names: list[str],
+    *,
+    source_path: str = DEFAULT_LOCAL_SKILLS_PATH,
+) -> dict[str, Any]:
+    """Link selected local skills into the workspace without copying their files."""
+    if not names or len(names) > 200:
+        raise SkillManagementError("select between 1 and 200 skills to import")
+    if any(not isinstance(name, str) or not name for name in names):
+        raise SkillManagementError("invalid skill selection")
+
+    _, skills_root, entries = _local_skill_entries(workspace_path, source_path)
+    available = {entry["name"]: entry for entry in entries}
+    existing_names = {
+        entry["name"]
+        for entry in SkillsLoader(workspace_path).list_skills(filter_unavailable=False)
+    }
+    imported: list[str] = []
+    skipped: list[dict[str, str]] = []
+    created: list[Path] = []
+    skills_root.mkdir(parents=True, exist_ok=True)
+
+    for name in dict.fromkeys(names):
+        entry = available.get(name)
+        if entry is None:
+            skipped.append({"name": name, "reason": "not_found"})
+            continue
+        target = skills_root / name
+        if target.parent != skills_root:
+            skipped.append({"name": name, "reason": "invalid_name"})
+            continue
+        if name in existing_names or _path_exists(target):
+            skipped.append({"name": name, "reason": "already_exists"})
+            continue
+        try:
+            target.symlink_to(entry["path"], target_is_directory=True)
+        except FileExistsError:
+            skipped.append({"name": name, "reason": "already_exists"})
+            continue
+        except OSError as exc:
+            for created_target in reversed(created):
+                created_target.unlink(missing_ok=True)
+            raise SkillManagementError(f"could not link skill {name}: {exc}", status=500) from exc
+        created.append(target)
+        imported.append(name)
+
+    return {
+        "source_path": source_path.strip() or DEFAULT_LOCAL_SKILLS_PATH,
+        "imported": imported,
+        "skipped": skipped,
+    }
 
 
 def webui_skills_payload(
@@ -99,10 +183,8 @@ def delete_webui_skill(
     config_path: Path | None = None,
 ) -> dict[str, Any]:
     """Delete one workspace skill and remove its disabled-state entry."""
-    entry = _require_skill_entry(workspace_path, name)
-    if entry.get("source") != "workspace":
-        raise SkillManagementError("built-in skills cannot be deleted", status=403)
-
+    if not name or "/" in name or "\\" in name:
+        raise SkillManagementError("invalid skill name")
     workspace = workspace_path.expanduser().resolve()
     try:
         skills_root = require_path_within(
@@ -137,6 +219,74 @@ def delete_webui_skill(
     disabled_skills.clear()
     disabled_skills.update(next_disabled)
     return {"name": name, "enabled": False, "deleted": True}
+
+
+def _local_skill_entries(
+    workspace_path: Path,
+    source_path: str,
+) -> tuple[Path, Path, list[dict[str, Any]]]:
+    """Resolve and validate direct child skills from one local directory."""
+    raw_source = source_path.strip() or DEFAULT_LOCAL_SKILLS_PATH
+    source_root = Path(raw_source).expanduser()
+    if not source_root.exists():
+        raise SkillManagementError("local skills directory was not found", status=404)
+    if not source_root.is_dir():
+        raise SkillManagementError("local skills path is not a directory")
+    try:
+        source_root = source_root.resolve(strict=True)
+    except OSError as exc:
+        raise SkillManagementError("local skills directory could not be resolved") from exc
+
+    workspace = workspace_path.expanduser().resolve()
+    try:
+        skills_root = require_path_within(
+            workspace / "skills",
+            workspace,
+            message="skills directory must stay inside the workspace",
+        )
+    except WorkspaceBoundaryError as exc:
+        raise SkillManagementError(str(exc), status=403) from exc
+    if source_root == skills_root or skills_root in source_root.parents:
+        raise SkillManagementError("local skills directory cannot be inside workspace skills")
+
+    entries: list[dict[str, Any]] = []
+    try:
+        children = sorted(source_root.iterdir(), key=lambda path: path.name)
+    except OSError as exc:
+        raise SkillManagementError("local skills directory could not be read", status=403) from exc
+    for child in children:
+        name = child.name
+        if child.is_symlink():
+            continue
+        try:
+            resolved = child.resolve(strict=True)
+        except OSError:
+            continue
+        if (
+            not resolved.is_dir()
+            or source_root not in resolved.parents
+            or resolved == skills_root
+            or skills_root in resolved.parents
+        ):
+            continue
+        skill_file = resolved / "SKILL.md"
+        if skill_file.is_symlink() or not skill_file.is_file():
+            continue
+        try:
+            content = skill_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        metadata = parse_skill_metadata(content)
+        if metadata is None or not valid_skill_metadata(metadata, name):
+            continue
+        description = cast(str, metadata["description"]).strip()
+        entries.append({"name": name, "description": description, "path": resolved})
+    return source_root, skills_root, entries
+
+
+def _path_exists(path: Path) -> bool:
+    """Treat broken symlinks as existing workspace entries for conflict checks."""
+    return path.exists() or path.is_symlink()
 
 
 def _require_skill_entry(workspace_path: Path, name: str) -> dict[str, str]:

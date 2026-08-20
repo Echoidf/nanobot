@@ -49,8 +49,8 @@ describe("localized format helpers", () => {
     await setAppLanguage("en");
     const english = fmtDateTime(value);
 
-    await setAppLanguage("fr");
-    const french = fmtDateTime(value);
+    await setAppLanguage("zh-CN");
+    const chinese = fmtDateTime(value);
 
     expect(english).toBe(
       new Intl.DateTimeFormat("en", {
@@ -58,13 +58,13 @@ describe("localized format helpers", () => {
         timeStyle: "short",
       }).format(date),
     );
-    expect(french).toBe(
-      new Intl.DateTimeFormat("fr", {
+    expect(chinese).toBe(
+      new Intl.DateTimeFormat("zh-CN", {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(date),
     );
-    expect(english).not.toBe(french);
+    expect(english).not.toBe(chinese);
   });
 
   it("shows only the local clock time for messages completed today", async () => {

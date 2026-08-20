@@ -9,6 +9,7 @@ import type {
   CliAppsPayload,
   FilePreviewPayload,
   ImageGenerationSettingsUpdate,
+  LocalSkillsPayload,
   McpPresetsPayload,
   McpOAuthFlowPayload,
   MarketplaceProvider,
@@ -31,6 +32,7 @@ import type {
   SkillDetail,
   SkillActionPayload,
   SkillInstallPayload,
+  SkillLocalImportPayload,
   SkillsPayload,
   SkillsSearchPayload,
   SkillsTrendsPayload,
@@ -349,6 +351,32 @@ export async function fetchSkillDetail(
     token,
     undefined,
     API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchLocalSkills(
+  token: string,
+  sourcePath: string,
+  base: string = "",
+): Promise<LocalSkillsPayload> {
+  const params = new URLSearchParams({ path: sourcePath });
+  return request<LocalSkillsPayload>(
+    `${base}/api/webui/skills/local?${params}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function importLocalSkills(
+  transport: WebUIMutationTransport,
+  sourcePath: string,
+  names: string[],
+): Promise<SkillLocalImportPayload> {
+  return mutation<SkillLocalImportPayload>(
+    transport,
+    "skill.import_local",
+    { source_path: sourcePath, names },
   );
 }
 

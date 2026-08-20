@@ -337,26 +337,9 @@ function renderPresetComposer(variant: "thread" | "hero" = "thread") {
     />,
   );
   return {
-    badge: screen.getByRole("spinbutton", { name: "kimi" }),
+    badge: screen.getByRole("button", { name: "Choose model" }),
     onPresetChange,
   };
-}
-
-function pointerDown(badge: HTMLElement, pointerId = 7, clientY = 100, button = 0) {
-  fireEvent.pointerDown(badge, {
-    button,
-    clientY,
-    isPrimary: true,
-    pointerId,
-    pointerType: "mouse",
-  });
-}
-
-function longPress(badge: HTMLElement, pointerId = 7) {
-  pointerDown(badge, pointerId);
-  act(() => {
-    vi.advanceTimersByTime(400);
-  });
 }
 
 describe("ThreadComposer", () => {
@@ -538,7 +521,7 @@ describe("ThreadComposer", () => {
       />,
     );
 
-    const badge = screen.getByRole("spinbutton", { name: "gpt-5.6-sol" });
+    const badge = screen.getByRole("button", { name: "Choose model" });
     expect(badge).toHaveClass("w-fit", "max-w-[min(18rem,44vw)]");
     expect(badge).not.toHaveClass("w-[5.75rem]");
     expect(screen.getByText("gpt-5.6-sol")).toBeInTheDocument();
@@ -571,93 +554,48 @@ describe("ThreadComposer", () => {
     expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument();
   });
 
-  it("scrolls complete preset pills after a left-button long press and wraps", () => {
-    vi.useFakeTimers();
+  it("opens an explicit preset menu and switches by clicking an option", async () => {
+    const user = userEvent.setup();
     const { badge, onPresetChange } = renderPresetComposer();
     expect(badge).toHaveClass("h-9");
-    expect(badge).toHaveStyle({ touchAction: "manipulation" });
-    const idleTouchMove = new Event("touchmove", {
-      bubbles: true,
-      cancelable: true,
-    });
-    badge.dispatchEvent(idleTouchMove);
-    expect(idleTouchMove.defaultPrevented).toBe(false);
-    fireEvent.click(badge);
-    pointerDown(badge);
-    fireEvent.pointerMove(badge, { clientY: 80, pointerId: 7, pointerType: "mouse" });
-    act(() => vi.advanceTimersByTime(500));
-    fireEvent.pointerUp(badge, { clientY: 80, pointerId: 7, pointerType: "mouse" });
-    expect(onPresetChange).not.toHaveBeenCalled();
 
-    longPress(badge);
-    expect(badge).toHaveAttribute("data-switching", "true");
-    const viewport = screen.getByTestId("composer-model-pill-viewport");
-    expect(viewport).toHaveClass(
-      "right-0",
-      "w-max",
-      "max-w-[calc(44vw+0.5rem)]",
-      "overflow-hidden",
-      "-top-3",
-      "-bottom-3",
-    );
-    const track = screen.getByTestId("composer-model-pill-track");
-    expect(track).toHaveClass("w-max", "max-w-full", "items-end", "gap-1");
-    const activeTouchMove = new Event("touchmove", {
-      bubbles: true,
-      cancelable: true,
-    });
-    badge.dispatchEvent(activeTouchMove);
-    expect(activeTouchMove.defaultPrevented).toBe(true);
-    const pills = track.querySelectorAll<HTMLElement>(".composer-model-pill");
-    expect(pills).toHaveLength(5);
-    expect(Array.from(pills).every((pill) => pill.classList.contains("w-fit"))).toBe(true);
-    expect(Array.from(pills).every((pill) => pill.querySelector("img"))).toBe(true);
-    expect(Array.from(badge.querySelectorAll("img")).every((image) => !image.draggable)).toBe(true);
-    const centeredPill = track.querySelector<HTMLElement>("[data-preset-offset='0']");
-    expect(centeredPill).toHaveTextContent("kimi");
-    expect(centeredPill).toHaveStyle({ transform: "scale(1.0800)" });
-    expect(
-      track.querySelector<HTMLElement>("[data-preset-offset='1']"),
-    ).toHaveStyle({ transform: "scale(1.0200)" });
+    await user.click(badge);
 
-    fireEvent.pointerMove(badge, {
-      clientY: 122,
-      pointerId: 7,
-      pointerType: "mouse",
-    });
-    expect(track.querySelector("[data-preset-offset='0']")).toHaveTextContent("kimi");
-    fireEvent.pointerMove(badge, {
-      clientY: 123,
-      pointerId: 7,
-      pointerType: "mouse",
-    });
-    expect(track.querySelector("[data-preset-offset='0']")).toHaveTextContent("dspro");
-    fireEvent.pointerUp(badge, {
-      clientY: 123,
-      pointerId: 7,
-      pointerType: "mouse",
-    });
+    expect(screen.getByText("Applies to this chat. Automatic fallback remains enabled.")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /kimi/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /dflash/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /dspro/i })).toBeInTheDocument();
 
-    expect(onPresetChange).toHaveBeenCalledWith("dspro");
-    expect(badge).toHaveAttribute("data-settling", "true");
-    expect(track).toHaveAttribute("data-settling", "true");
-    act(() => {
-      vi.advanceTimersByTime(260);
-    });
-    expect(badge).not.toHaveAttribute("data-switching");
-    expect(badge).not.toHaveAttribute("data-settling");
+    await user.click(screen.getByRole("menuitem", { name: /dspro/i }));
+    await waitFor(() => expect(onPresetChange).toHaveBeenCalledWith("dspro"));
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
   });
 
-  it("supports the same long-press switcher in hero mode and cancels pointercancel", () => {
-    vi.useFakeTimers();
-    const { badge, onPresetChange } = renderPresetComposer("hero");
+  it("keeps the selector open and shows an error when switching fails", async () => {
+    const user = userEvent.setup();
+    const onPresetChange = vi.fn().mockRejectedValue(new Error("gateway unavailable"));
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        modelLabel="kimi"
+        modelPreset="kimi"
+        modelProvider="moonshot"
+        modelPresets={MODEL_PRESETS}
+        onModelPresetChange={onPresetChange}
+        placeholder="Ask anything..."
+        variant="hero"
+      />,
+    );
+
+    const badge = screen.getByRole("button", { name: "Choose model" });
     expect(badge).toHaveClass("h-8");
-    longPress(badge, 9);
-    expect(badge).toHaveAttribute("data-switching", "true");
-    fireEvent.pointerMove(badge, { clientY: 75, pointerId: 9, pointerType: "mouse" });
-    fireEvent.pointerCancel(badge, { clientY: 75, pointerId: 9, pointerType: "mouse" });
-    expect(badge).not.toHaveAttribute("data-switching");
-    expect(onPresetChange).not.toHaveBeenCalled();
+    await user.click(badge);
+    await user.click(screen.getByRole("menuitem", { name: /dflash/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not switch model. gateway unavailable",
+    );
+    expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
   it("transcribes voice input into the composer without sending", async () => {

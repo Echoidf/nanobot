@@ -411,21 +411,35 @@ function modelPresetOptionsFromSettings(
   settings: SettingsPayload | null,
 ): ModelPresetOption[] {
   if (!settings) return [];
-  const order = new Map(
-    (settings.model_call_order ?? []).map((name, index) => [name.trim(), index]),
-  );
+  const callOrder = settings.model_call_order ?? [];
+  const order = new Map(callOrder.map((name, index) => [name.trim(), index]));
+  const activeDefault = callOrder.length === 0 && (settings.agent.model_preset || "default") === "default";
   return settings.model_presets
-    .filter((preset) => !preset.is_default && preset.name.trim())
-    .sort((a, b) => (
-      (order.get(a.name.trim()) ?? Number.POSITIVE_INFINITY)
-      - (order.get(b.name.trim()) ?? Number.POSITIVE_INFINITY)
-    ))
+    .filter((preset) => preset.name.trim())
+    .sort((a, b) => {
+      const aOrder = order.get(a.name.trim());
+      const bOrder = order.get(b.name.trim());
+      if (aOrder !== undefined || bOrder !== undefined) {
+        return (aOrder ?? Number.POSITIVE_INFINITY) - (bOrder ?? Number.POSITIVE_INFINITY);
+      }
+      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+      return 0;
+    })
     .map((preset) => {
       const name = preset.name.trim();
+      const resolvedProvider = preset.resolved_provider || preset.provider;
+      const providerRow = settings.providers.find((item) => item.name === resolvedProvider);
       return {
         name,
+        label: preset.is_default ? preset.label?.trim() || "Default" : name,
         model: preset.model,
-        provider: preset.resolved_provider || preset.provider,
+        provider: resolvedProvider,
+        providerLabel: resolvedProvider
+          ? providerDisplayLabel(settings.providers, resolvedProvider)
+          : null,
+        isDefault: preset.is_default,
+        callOrderIndex: order.get(name) ?? (preset.is_default && activeDefault ? 0 : null),
+        available: Boolean(preset.model && resolvedProvider && providerRow?.configured),
       };
     });
 }
@@ -888,11 +902,13 @@ export function ThreadShell({
     || settings?.agent.model_preset
     || "default"
   );
-  const handleModelPresetChange = useCallback((name: string) => {
-    setLocalModelPreset(name);
-    if (chatId) {
-      void client.sendSystemCommand(chatId, `/model ${name}`).catch(() => {});
+  const handleModelPresetChange = useCallback(async (name: string) => {
+    if (!chatId) {
+      setLocalModelPreset(name);
+      return;
     }
+    await client.sendSystemCommand(chatId, `/model ${name}`);
+    setLocalModelPreset(name);
   }, [chatId, client]);
   const modelPresetOptions = useMemo(
     () => modelPresetOptionsFromSettings(settings),

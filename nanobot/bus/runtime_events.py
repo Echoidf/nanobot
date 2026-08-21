@@ -73,6 +73,8 @@ class TurnCompleted:
     latency_ms: int | None = None
     runtime: LLMRuntime | None = None
     usage: dict[str, int] = field(default_factory=dict)
+    stop_reason: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -321,6 +323,8 @@ class RuntimeEventPublisher:
         chat_id: str,
         session_key: str,
         metadata: dict[str, Any] | None,
+        stop_reason: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         await self.bus.publish(
             TurnCompleted(
@@ -333,6 +337,8 @@ class RuntimeEventPublisher:
                 latency_ms=self._turn_latency_ms.pop(session_key, None),
                 runtime=self._turn_runtime.pop(session_key, None),
                 usage=self._turn_usage.pop(session_key, {}),
+                stop_reason=stop_reason,
+                error_message=error_message,
             )
         )
 

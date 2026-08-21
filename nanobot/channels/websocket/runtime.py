@@ -54,7 +54,10 @@ from nanobot.security.workspace_access import (
     WorkspaceScopeError,
 )
 from nanobot.session.goal_state import goal_state_ws_blob
-from nanobot.session.model_selection import model_preset_from_metadata
+from nanobot.session.model_selection import (
+    model_preset_from_metadata,
+    model_selection_mode_from_metadata,
+)
 from nanobot.session.webui_turns import (
     clear_websocket_turn_if_current,
     clear_websocket_turns,
@@ -448,9 +451,11 @@ class WebSocketChannel(BaseChannel):
         fields: dict[str, Any] = {}
         try:
             fields["model_preset"] = model_preset_from_metadata(metadata)
+            fields["model_selection_mode"] = model_selection_mode_from_metadata(metadata)
         except ValueError:
-            self.logger.warning("ignoring invalid model preset metadata for chat_id={}", chat_id)
+            self.logger.warning("ignoring invalid model selection metadata for chat_id={}", chat_id)
             fields["model_preset"] = None
+            fields["model_selection_mode"] = "auto"
         if isinstance(metadata, dict):
             usage = metadata.get("_last_usage")
             if isinstance(usage, dict):
@@ -1740,6 +1745,8 @@ class WebSocketChannel(BaseChannel):
                 goal_state=event.goal_state,
                 usage=event.usage,
                 context_window_tokens=event.context_window_tokens,
+                stop_reason=event.stop_reason,
+                error_message=event.error_message,
                 metadata=msg.metadata,
                 turn_owner=turn_owner if isinstance(turn_owner, str) else None,
             )
@@ -1959,6 +1966,8 @@ class WebSocketChannel(BaseChannel):
         goal_state: dict[str, Any] | None = None,
         usage: dict[str, int] | None = None,
         context_window_tokens: int | None = None,
+        stop_reason: str | None = None,
+        error_message: str | None = None,
         metadata: dict[str, Any] | None = None,
         turn_owner: str | None = None,
     ) -> None:
@@ -1976,6 +1985,10 @@ class WebSocketChannel(BaseChannel):
             body["usage"] = usage
         if context_window_tokens is not None:
             body["context_window_tokens"] = int(context_window_tokens)
+        if isinstance(stop_reason, str) and stop_reason:
+            body["stop_reason"] = stop_reason
+        if isinstance(error_message, str) and error_message.strip():
+            body["error_message"] = error_message.strip()
         canonical_webui_turn = (metadata or {}).get("webui") is True
         prior_persistence_failure = (
             canonical_webui_turn

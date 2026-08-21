@@ -23,6 +23,7 @@ export interface ModelPresetOption {
   isDefault?: boolean;
   callOrderIndex?: number | null;
   available?: boolean;
+  selectionMode?: "auto" | "manual";
 }
 
 interface ModelPresetBadgeProps {
@@ -55,7 +56,7 @@ export function ModelPresetBadge({
 }: ModelPresetBadgeProps) {
   const { t } = useTranslation();
   const activeName = modelPreset?.trim() || "default";
-  const canSwitch = Boolean(onPresetChange) && modelPresets.length > 1;
+  const canSwitch = !needsSetup && Boolean(onPresetChange) && modelPresets.length > 1;
   const [open, setOpen] = useState(false);
   const [pendingPreset, setPendingPreset] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -190,13 +191,8 @@ export function ModelPresetBadge({
 function PresetRole({ option }: { option: ModelPresetOption }) {
   const { t } = useTranslation();
   let text: string;
-  if (option.callOrderIndex === 0) {
-    text = t("settings.models.primary", { defaultValue: "Primary" });
-  } else if (typeof option.callOrderIndex === "number" && option.callOrderIndex > 0) {
-    text = t("settings.models.fallbackNumber", {
-      number: option.callOrderIndex,
-      defaultValue: `Fallback ${option.callOrderIndex}`,
-    });
+  if (option.selectionMode === "auto") {
+    text = t("thread.composer.autoMode", { defaultValue: "Auto" });
   } else {
     text = t("thread.composer.notInFallbackChain", { defaultValue: "Manual" });
   }

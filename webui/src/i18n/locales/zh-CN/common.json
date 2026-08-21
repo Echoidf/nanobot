@@ -1204,7 +1204,8 @@
       "modelNotConfigured": "模型未配置",
       "configureModel": "配置模型",
       "chooseModel": "选择模型",
-      "modelScopeHelp": "仅应用于当前对话，自动降级兜底仍然生效。",
+      "modelScopeHelp": "Auto 会自动降级；手动选择时仅使用指定模型。",
+      "autoMode": "自动",
       "notInFallbackChain": "手动选择",
       "modelSwitchFailed": "模型切换失败。",
       "queued": {

@@ -147,6 +147,11 @@ class FallbackProvider(LLMProvider):
         self._fallback_model_observer = observer
 
     @property
+    def primary_provider(self) -> LLMProvider:
+        """Return the configured primary provider without fallback or circuit-breaker routing."""
+        return self._primary
+
+    @property
     def supports_progress_deltas(self) -> bool:
         return bool(getattr(self._primary, "supports_progress_deltas", False))
 

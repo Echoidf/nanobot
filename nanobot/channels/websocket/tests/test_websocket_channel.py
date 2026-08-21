@@ -290,6 +290,7 @@ async def test_attach_exposes_the_session_canonical_model_preset(bus, tmp_path) 
         "event": "attached",
         "chat_id": "pinned-model",
         "model_preset": "Deep Research",
+        "model_selection_mode": "manual",
     }
 
 
@@ -2098,6 +2099,7 @@ def test_attach_fields_restore_the_session_model_and_latest_usage() -> None:
 
     assert channel._attached_model_fields("chat-1") == {
         "model_preset": "Deep Research",
+        "model_selection_mode": "manual",
         "usage": {"prompt_tokens": 120, "completion_tokens": 8},
     }
 
@@ -2622,6 +2624,69 @@ async def test_send_turn_end_emits_turn_end_event() -> None:
         {"event": "turn_end", "chat_id": "chat-1"},
         {"event": "session_updated", "chat_id": "chat-1", "scope": "thread"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_send_turn_end_includes_error_message_when_present() -> None:
+    bus = MagicMock()
+    channel = WebSocketChannel({"enabled": True, "allowFrom": ["*"]}, bus, gateway=_basic_handler(bus))
+    mock_ws = AsyncMock()
+    channel._attach(mock_ws, "chat-1")
+
+    await channel.send(OutboundMessage(
+        channel="websocket",
+        chat_id="chat-1",
+        content="",
+        event=TurnEndEvent(error_message="  Model request failed.  "),
+    ))
+
+    assert _sent_ws_payloads(mock_ws) == [
+        {
+            "event": "turn_end",
+            "chat_id": "chat-1",
+            "error_message": "Model request failed.",
+        },
+        {"event": "session_updated", "chat_id": "chat-1", "scope": "thread"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_turn_end_error_message_is_restored_as_assistant_message() -> None:
+    from nanobot.webui.transcript import (
+        append_transcript_object,
+        build_webui_thread_response,
+        read_transcript_lines,
+    )
+
+    append_transcript_object(
+        "websocket:failed-chat",
+        {"event": "user", "chat_id": "failed-chat", "text": "hello"},
+    )
+    bus = MagicMock()
+    channel = WebSocketChannel({"enabled": True, "allowFrom": ["*"]}, bus, gateway=_basic_handler(bus))
+
+    await channel.send(OutboundMessage(
+        channel="websocket",
+        chat_id="failed-chat",
+        content="",
+        event=TurnEndEvent(
+            stop_reason="error",
+            error_message="Model request failed.",
+        ),
+    ))
+
+    persisted = read_transcript_lines("websocket:failed-chat")[-1]
+    assert isinstance(persisted.pop("created_at_ms"), int)
+    assert persisted == {
+        "event": "turn_end",
+        "chat_id": "failed-chat",
+        "stop_reason": "error",
+        "error_message": "Model request failed.",
+    }
+    body = build_webui_thread_response("websocket:failed-chat")
+    assert body is not None
+    assert body["messages"][-1]["role"] == "assistant"
+    assert body["messages"][-1]["content"] == "Model request failed."
 
 
 @pytest.mark.asyncio
@@ -4973,6 +5038,7 @@ def test_sessions_list_includes_active_run_started_at(monkeypatch) -> None:
             "title": "Running",
             "preview": "work",
             "model_preset": "fast",
+            "model_selection_mode": "manual",
             "path": "/private/path",
         },
         {
@@ -5018,6 +5084,7 @@ def test_sessions_list_includes_active_run_started_at(monkeypatch) -> None:
             "title": "Running",
             "preview": "work",
             "model_preset": "fast",
+            "model_selection_mode": "manual",
             "run_started_at": 1_700_000_000.0,
             "handle": handle.public_payload(),
         }

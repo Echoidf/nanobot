@@ -876,6 +876,30 @@ export function useNanobotStream(
         setMessages((prev) => {
           let finalized = prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
           finalized = pruneReasoningOnlyPlaceholders(finalized);
+          const errorMessage = typeof ev.error_message === "string"
+            ? ev.error_message.trim()
+            : "";
+          if (
+            errorMessage
+            && ["error", "tool_error", "empty_final_response"].includes(ev.stop_reason ?? "")
+            && !finalized.some((message) => (
+              message.role === "assistant"
+              && message.turnId === ev.turn_id
+              && message.content.trim() === errorMessage
+            ))
+          ) {
+            finalized = [
+              ...finalized,
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: errorMessage,
+                isStreaming: false,
+                ...turnFieldsFromEvent(ev, "complete"),
+                createdAt: completedAt,
+              },
+            ];
+          }
           const latencyMs =
             typeof ev.latency_ms === "number" && ev.latency_ms >= 0
               ? Math.round(ev.latency_ms)

@@ -1205,7 +1205,8 @@
       "modelNotConfigured": "Model not configured",
       "configureModel": "Configure model",
       "chooseModel": "Choose model",
-      "modelScopeHelp": "Applies to this chat. Automatic fallback remains enabled.",
+      "modelScopeHelp": "Auto uses fallback; a manual selection only uses that model.",
+      "autoMode": "Auto",
       "notInFallbackChain": "Manual",
       "modelSwitchFailed": "Could not switch model.",
       "queued": {

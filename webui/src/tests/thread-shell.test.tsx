@@ -591,7 +591,7 @@ describe("ThreadShell", () => {
     );
 
     expect(await screen.findByTestId("composer-model-logo-openai_codex")).toBeInTheDocument();
-    expect(screen.getByText("Default")).toBeInTheDocument();
+    expect(screen.getByText("Auto")).toBeInTheDocument();
     expect(screen.queryByText("ling-3.0-flash")).not.toBeInTheDocument();
   });
 
@@ -656,6 +656,13 @@ describe("ThreadShell", () => {
       "/model extra",
     ));
     expect(await screen.findByText("extra")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Choose model" }));
+    await user.click(await screen.findByRole("menuitem", { name: /auto/i }));
+    await waitFor(() => expect(client.sendSystemCommand).toHaveBeenLastCalledWith(
+      "preset-order",
+      "/model auto",
+    ));
+    expect(await screen.findByText("Auto")).toBeInTheDocument();
 
     rerender(view("fast"));
     expect(await screen.findByText("fast")).toBeInTheDocument();
@@ -710,7 +717,7 @@ describe("ThreadShell", () => {
       "openai-codex/gpt-5.5",
     ));
 
-    expect(await screen.findByText("Default")).toBeInTheDocument();
+    expect(await screen.findByText("Auto")).toBeInTheDocument();
     const configuredBadge = screen.getByTestId("composer-model-logo-openai_codex").parentElement;
     expect(configuredBadge).not.toBeNull();
     expect(configuredBadge).toHaveClass("composer-model-badge");
@@ -728,7 +735,7 @@ describe("ThreadShell", () => {
     const badge = logo.parentElement;
     expect(badge).not.toBeNull();
     expect(badge).toBe(configuredBadge);
-    expect(screen.getByText("Default")).toBeInTheDocument();
+    expect(screen.getByText("Auto")).toBeInTheDocument();
     expect(screen.queryByText("deepseek-chat")).not.toBeInTheDocument();
     expect(badge).toHaveAttribute("data-fallback", "true");
     expect(badge).toHaveAttribute(
@@ -751,7 +758,7 @@ describe("ThreadShell", () => {
     });
     expect(
       screen.getByTestId("composer-model-logo-openai_codex").parentElement,
-    ).toHaveAttribute("title", "Default · gpt-5.5 · OpenAI Codex");
+    ).toHaveAttribute("title", "Auto · gpt-5.5 · OpenAI Codex");
     expect(
       screen.getByTestId("composer-model-logo-openai_codex").parentElement,
     ).toBe(badge);

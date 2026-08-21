@@ -30,11 +30,15 @@ from nanobot.session.manager import (
     _message_preview_text,  # pyright: ignore[reportPrivateUsage]
     _metadata_title,  # pyright: ignore[reportPrivateUsage]
 )
-from nanobot.session.model_selection import model_preset_from_metadata
+from nanobot.session.model_selection import (
+    model_preset_from_metadata,
+    model_selection_mode_from_metadata,
+)
 
-_INDEX_VERSION = 7
+_INDEX_VERSION = 8
 _INDEX_FILENAME = ".webui_session_index.json"
 _MODEL_PRESET_FIELD = "model_preset"
+_MODEL_SELECTION_MODE_FIELD = "model_selection_mode"
 _ROW_SOURCE_FIELD = "_source"
 _SESSION_SOURCE = "session"
 _TRANSCRIPT_SOURCE = "webui_transcript"
@@ -485,6 +489,7 @@ def _indexed_row_for_session(session: Session, path: Path, webui_dir: Path) -> d
         "title": _metadata_title(session.metadata),
         "preview": _preview_from_messages(session.messages),
         _MODEL_PRESET_FIELD: model_preset_from_metadata(session.metadata),
+        _MODEL_SELECTION_MODE_FIELD: model_selection_mode_from_metadata(session.metadata),
         **_indexed_workspace_scope_fields(session.metadata),
         _ROW_SOURCE_FIELD: _SESSION_SOURCE,
         "file": path.name,
@@ -687,6 +692,7 @@ def _scan_session_row(
                 "title": _metadata_title(metadata),
                 "preview": preview or fallback_preview,
                 _MODEL_PRESET_FIELD: model_preset_from_metadata(metadata),
+                _MODEL_SELECTION_MODE_FIELD: model_selection_mode_from_metadata(metadata),
                 **_indexed_workspace_scope_fields(metadata),
                 _ROW_SOURCE_FIELD: _SESSION_SOURCE,
                 "file": path.name,

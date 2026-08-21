@@ -652,6 +652,8 @@ class WebuiTurnCoordinator:
             context_window_tokens=(
                 event.runtime.context_window_tokens if event.runtime is not None else None
             ),
+            stop_reason=event.stop_reason,
+            error_message=event.error_message,
         )
         self._schedule_title_update_from_event(event)
 
@@ -701,6 +703,8 @@ class WebuiTurnCoordinator:
         latency_ms: int | None,
         usage: dict[str, int] | None = None,
         context_window_tokens: int | None = None,
+        stop_reason: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         if msg.channel != "websocket":
             return
@@ -715,6 +719,8 @@ class WebuiTurnCoordinator:
                     goal_state=goal_state_ws_blob(session.metadata),
                     usage=usage or None,
                     context_window_tokens=context_window_tokens,
+                    stop_reason=stop_reason,
+                    error_message=error_message,
                 ),
                 metadata=msg.metadata,
             )

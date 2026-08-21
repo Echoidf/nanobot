@@ -350,6 +350,38 @@ describe("useNanobotStream", () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
+  it("turns a failed model request into a visible assistant message and stops thinking", () => {
+    const fake = fakeClient();
+    const { result } = renderHook(() => useNanobotStream("chat-error", EMPTY_MESSAGES), {
+      wrapper: wrap(fake.client),
+    });
+
+    act(() => {
+      result.current.send("hello");
+    });
+    const turnId = result.current.messages[0]?.turnId;
+    expect(turnId).toBeTruthy();
+    expect(result.current.isStreaming).toBe(true);
+
+    act(() => {
+      fake.emit("chat-error", {
+        event: "turn_end",
+        chat_id: "chat-error",
+        turn_id: turnId,
+        stop_reason: "error",
+        error_message: "The selected model could not complete the request.",
+      });
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "The selected model could not complete the request.",
+      isStreaming: false,
+      turnId,
+    });
+  });
+
   it("preserves proactive automation source metadata on complete assistant messages", () => {
     const fake = fakeClient();
     const { result } = renderHook(() => useNanobotStream("chat-cron", EMPTY_MESSAGES), {

@@ -8,10 +8,13 @@ from nanobot.config.schema import ModelPresetConfig
 from nanobot.nanobot import Nanobot
 from nanobot.providers.base import GenerationSettings, LLMProvider, LLMResponse
 from nanobot.providers.factory import ProviderSnapshot
+from nanobot.providers.fallback_provider import FallbackProvider
 from nanobot.sdk.types import SessionSnapshot
 from nanobot.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
+    SESSION_MODEL_SELECTION_MODE_METADATA_KEY,
     model_preset_from_metadata,
+    model_selection_mode_from_metadata,
 )
 from nanobot.utils.llm_runtime import LLMRuntime
 
@@ -30,6 +33,17 @@ class RecordingProvider(LLMProvider):
 
     def get_default_model(self) -> str:
         return self.name
+
+
+class ErrorProvider(RecordingProvider):
+    async def chat(self, messages, tools=None, model=None, **kwargs):
+        await asyncio.sleep(0)
+        self.calls.append(model)
+        return LLMResponse(
+            content=f"{self.name} unavailable",
+            finish_reason="error",
+            error_kind="server_error",
+        )
 
 
 @pytest.mark.asyncio
@@ -104,6 +118,65 @@ async def test_sessions_run_concurrently_with_isolated_model_presets(tmp_path) -
     assert override.calls == ["override-model"]
     assert fast.calls == ["fast-model"]
     assert load_counts == {"fast": 1, "deep": 1}
+
+
+@pytest.mark.asyncio
+async def test_auto_uses_fallback_but_manual_preset_only_calls_selected_model(tmp_path) -> None:
+    primary = ErrorProvider("primary-model")
+    fallback = RecordingProvider("fallback-model")
+    fallback_preset = ModelPresetConfig(
+        model="fallback-model",
+        context_window_tokens=12_000,
+    )
+    provider = FallbackProvider(
+        primary=primary,
+        fallback_presets=[fallback_preset],
+        provider_factory=lambda _preset: fallback,
+        primary_context_window_tokens=8_000,
+    )
+    presets = {
+        "default": ModelPresetConfig(model="primary-model", context_window_tokens=8_000),
+        "primary": ModelPresetConfig(model="primary-model", context_window_tokens=8_000),
+    }
+
+    def load_preset(name: str) -> ProviderSnapshot:
+        preset = presets[name]
+        return ProviderSnapshot(
+            provider=provider,
+            model=preset.model,
+            context_window_tokens=8_000,
+            signature=(name, preset.model, "with-fallback"),
+        )
+
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=provider,
+        workspace=tmp_path,
+        model="primary-model",
+        context_window_tokens=8_000,
+        model_presets=presets,
+        preset_snapshot_loader=load_preset,
+    )
+    loop.schedule_background = lambda coro: coro.close()  # type: ignore[method-assign]
+
+    auto_reply = await loop.process_direct("hello", session_key="sdk:auto")
+    assert auto_reply is not None and auto_reply.content == "reply from fallback-model"
+    assert primary.calls == ["primary-model"]
+    assert fallback.calls == ["fallback-model"]
+
+    runtime = loop.set_session_model_preset("sdk:manual", "primary")
+    assert runtime.provider is primary
+    manual_reply = await loop.process_direct("hello", session_key="sdk:manual")
+    assert manual_reply is not None and manual_reply.content == "primary-model unavailable"
+    assert primary.calls == ["primary-model", "primary-model"]
+    assert fallback.calls == ["fallback-model"]
+    manual_session = loop.sessions.get_or_create("sdk:manual")
+    assert model_selection_mode_from_metadata(manual_session.metadata) == "manual"
+
+    loop.set_session_model_preset("sdk:manual", "auto")
+    assert model_selection_mode_from_metadata(manual_session.metadata) == "auto"
+    assert SESSION_MODEL_PRESET_METADATA_KEY not in manual_session.metadata
+    assert manual_session.metadata[SESSION_MODEL_SELECTION_MODE_METADATA_KEY] == "auto"
 
 
 @pytest.mark.asyncio

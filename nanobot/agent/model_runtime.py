@@ -10,6 +10,7 @@ from typing import cast
 from nanobot.agent import model_presets as preset_helpers
 from nanobot.config.schema import Config, ModelPresetConfig
 from nanobot.providers.factory import ProviderSnapshot, build_provider_snapshot
+from nanobot.providers.fallback_provider import FallbackProvider
 from nanobot.utils.llm_runtime import LLMRuntime, runtime_from_provider_snapshot
 
 
@@ -130,6 +131,21 @@ class ModelRuntimeResolver:
         runtime = self.resolve_snapshot(snapshot)
         self._resolved_presets[normalized] = runtime
         return runtime
+
+    def resolve_manual_preset(self, name: str | None) -> LLMRuntime:
+        """Resolve one preset without automatic fallback or fallback circuit breaking."""
+        self._refresh_preset_catalog()
+        normalized = preset_helpers.normalize_preset_name(name, self._model_presets)
+        runtime = self.resolve_preset(normalized)
+        provider = runtime.provider
+        if isinstance(provider, FallbackProvider):
+            provider = provider.primary_provider
+        return replace(
+            runtime,
+            provider=provider,
+            context_window_tokens=self._model_presets[normalized].context_window_tokens,
+            snapshot_signature=("manual", normalized, runtime.snapshot_signature),
+        )
 
     def select_preset(self, name: str | None) -> LLMRuntime:
         """Select a named preset as the default for future turns."""

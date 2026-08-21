@@ -60,6 +60,8 @@ class TurnEndEvent(OutboundEvent):
     goal_state: dict[str, Any] | None = None
     usage: dict[str, int] | None = None
     context_window_tokens: int | None = None
+    stop_reason: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +195,8 @@ def _legacy_event_from_metadata(msg: OutboundMessage) -> OutboundEvent | None:
                 else None
             ),
             context_window_tokens=_metadata_int(meta, "context_window_tokens"),
+            stop_reason=_metadata_str(meta, "_stop_reason"),
+            error_message=_metadata_str(meta, "_error_message"),
         )
     if meta.get("_session_updated"):
         return SessionUpdatedEvent(scope=_metadata_str(meta, "_session_update_scope"))

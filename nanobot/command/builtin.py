@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from nanobot import __version__
 from nanobot.bus.events import INBOUND_META_USER_SHELL, OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter, normalize_command_text
+from nanobot.session.model_selection import (
+    model_preset_from_metadata,
+    model_selection_mode_from_metadata,
+)
 from nanobot.utils.helpers import build_status_content
 from nanobot.utils.restart import set_restart_notice_to_env
 from nanobot.utils.workspace_prompts import initialize_workspace_prompt
@@ -342,7 +346,7 @@ def _format_preset_names(names: list[str]) -> str:
 def _model_preset_names(loop: AgentLoop) -> list[str]:
     names = set(loop.model_presets)
     names.add("default")
-    return ["default", *sorted(name for name in names if name != "default")]
+    return ["auto", "default", *sorted(name for name in names if name != "default")]
 
 
 def _command_error_message(exc: Exception) -> str:
@@ -357,15 +361,17 @@ def _model_command_status(loop: AgentLoop, session: Session) -> str:
         return "\n".join([
             "## Model",
             f"- Current selection error: {_command_error_message(exc)}",
-            f"- Available presets: {_format_preset_names(names)}",
+            f"- Available selections: {_format_preset_names(names)}",
             "- Switch with `/model <preset>`.",
         ])
-    active = runtime.model_preset or "default"
+    mode = model_selection_mode_from_metadata(session.metadata)
+    active = model_preset_from_metadata(session.metadata) if mode == "manual" else None
     return "\n".join([
         "## Model",
+        f"- Selection mode: `{mode}`",
         f"- Current model: `{runtime.model}`",
-        f"- Current preset: `{active}`",
-        f"- Available presets: {_format_preset_names(names)}",
+        f"- Current preset: `{active or 'auto'}`",
+        f"- Available selections: {_format_preset_names(names)}",
     ])
 
 
@@ -394,14 +400,19 @@ async def cmd_model(ctx: CommandContext) -> OutboundMessage:
             chat_id=ctx.msg.chat_id,
             content=(
                 f"Could not switch model preset: {_command_error_message(exc)}\n\n"
-                f"Available presets: {_format_preset_names(names)}"
+                f"Available selections: {_format_preset_names(names)}"
             ),
             metadata=metadata,
         )
 
     max_tokens = runtime.generation.max_tokens
+    is_auto = name.strip().casefold() == "auto"
     lines = [
-        f"Switched model preset to `{runtime.model_preset}`.",
+        (
+            "Switched model selection to `auto`."
+            if is_auto
+            else f"Switched to manual model preset `{runtime.model_preset}`."
+        ),
         "- Scope: current session",
         f"- Model: `{runtime.model}`",
         f"- Context window: {runtime.context_window_tokens}",

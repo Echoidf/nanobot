@@ -366,8 +366,10 @@ export interface ChatSummary {
   updatedAt: string | null;
   title?: string;
   preview: string;
-  /** Model preset persisted for this session; null means it still follows the global default. */
+  /** Manual model preset persisted for this session. */
   modelPreset?: string | null;
+  /** Session model routing mode; legacy rows with a preset are treated as manual. */
+  modelSelectionMode?: "auto" | "manual";
   /** Unix epoch seconds when this session currently has a turn in flight. */
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;
@@ -1337,6 +1339,8 @@ export type InboundEvent =
       event: "turn_end";
       chat_id: string;
       latency_ms?: number;
+      stop_reason?: string;
+      error_message?: string;
       /** Authoritative sustained-goal snapshot for this chat (same shape as ``goal_state`` events). */
       goal_state?: GoalStateWsPayload;
     } & InboundTurnMetadata)

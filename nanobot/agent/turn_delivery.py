@@ -254,11 +254,16 @@ class TurnDelivery:
                 )
             )
         if publish_completion:
+            response_metadata = response.metadata if response is not None else {}
+            stop_reason = response_metadata.get("_stop_reason")
+            error_message = response_metadata.get("_error_message")
             await self.runtime_event_publisher.turn_completed(
                 channel=completed_channel,
                 chat_id=completed_chat_id,
                 session_key=self.session_key,
                 metadata=self.lifecycle_message.metadata,
+                stop_reason=stop_reason if isinstance(stop_reason, str) else None,
+                error_message=error_message if isinstance(error_message, str) else None,
             )
 
     async def fail(self, *, publish_completion: bool) -> None:
@@ -276,6 +281,8 @@ class TurnDelivery:
                 chat_id=self.lifecycle_message.chat_id,
                 session_key=self.session_key,
                 metadata=self.lifecycle_message.metadata,
+                stop_reason="error",
+                error_message="Sorry, I encountered an error.",
             )
 
     async def idle(self) -> None:

@@ -77,7 +77,9 @@ from nanobot.session.keys import UNIFIED_SESSION_KEY, remember_last_channel
 from nanobot.session.manager import SESSION_CACHE_MAX_SIZE, Session, SessionManager
 from nanobot.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
+    SESSION_MODEL_SELECTION_MODE_METADATA_KEY,
     model_preset_from_metadata,
+    model_selection_mode_from_metadata,
 )
 from nanobot.session.summary import SessionSummary
 from nanobot.triggers.local_turns import LocalTriggerTurnCoordinator
@@ -551,20 +553,24 @@ class AgentLoop:
         recover_removed: bool = True,
     ) -> LLMRuntime:
         """Resolve the immutable runtime selected by one session."""
+        mode = model_selection_mode_from_metadata(session.metadata)
+        if mode == "auto":
+            return self.llm_runtime()
         name = model_preset_from_metadata(session.metadata)
         if name is None:
-            return self.llm_runtime()
+            raise ValueError("manual session model selection requires a model preset")
         try:
-            return self.runtime_resolver.resolve_preset(name)
+            return self.runtime_resolver.resolve_manual_preset(name)
         except KeyError:
             if not recover_removed or name in self.runtime_resolver.model_presets:
                 raise
             logger.warning(
-                "Session '{}' references removed model preset '{}'; falling back to default",
+                "Session '{}' references removed model preset '{}'; falling back to auto",
                 session.key,
                 name,
             )
             session.metadata.pop(SESSION_MODEL_PRESET_METADATA_KEY, None)
+            session.metadata[SESSION_MODEL_SELECTION_MODE_METADATA_KEY] = "auto"
             self.sessions.save(session)
             return self.llm_runtime()
 
@@ -573,10 +579,17 @@ class AgentLoop:
         session_key: str,
         name: str,
     ) -> LLMRuntime:
-        """Validate and persist one session's preset selection."""
-        runtime = self.runtime_resolver.resolve_preset(name)
+        """Persist Auto mode or a manual single-model preset for one session."""
         session = self.sessions.get_or_create(session_key)
+        if name.strip().casefold() == "auto":
+            session.metadata.pop(SESSION_MODEL_PRESET_METADATA_KEY, None)
+            session.metadata[SESSION_MODEL_SELECTION_MODE_METADATA_KEY] = "auto"
+            self.sessions.save(session)
+            return self.llm_runtime()
+
+        runtime = self.runtime_resolver.resolve_manual_preset(name)
         session.metadata[SESSION_MODEL_PRESET_METADATA_KEY] = runtime.model_preset
+        session.metadata[SESSION_MODEL_SELECTION_MODE_METADATA_KEY] = "manual"
         self.sessions.save(session)
         return runtime
 
@@ -2045,8 +2058,10 @@ class AgentLoop:
             log_content=ctx.require_session().policy.log_content,
             turn_latency_ms=ctx.turn_latency_ms,
         )
-        if ctx.ephemeral and ctx.outbound is not None:
+        if ctx.outbound is not None:
             ctx.outbound.metadata["_stop_reason"] = ctx.stop_reason
+            if ctx.stop_reason in {"error", "tool_error", "empty_final_response"}:
+                ctx.outbound.metadata["_error_message"] = ctx.final_content
 
     def _sanitize_persisted_blocks(
         self,

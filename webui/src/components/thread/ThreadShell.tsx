@@ -373,17 +373,20 @@ function toModelBadgeInfo(
   modelName: string | null,
   settings: SettingsPayload | null,
   modelPreset: string | null = null,
+  selectionMode: "auto" | "manual" = "auto",
 ): ModelBadgeInfo {
-  const scopedPreset = modelPreset?.trim() || null;
+  const scopedPreset = selectionMode === "manual" ? modelPreset?.trim() || null : null;
   const preset = modelPresetForBadge(settings, scopedPreset);
   const model = scopedPreset
     ? preset?.model || null
     : settings?.agent.model || modelName || null;
-  const label = preset
-    ? preset.is_default
-      ? preset.label?.trim() || "Default"
-      : preset.name.trim()
-    : scopedPreset || toModelBadgeLabel(model);
+  const label = selectionMode === "auto"
+    ? "Auto"
+    : preset
+      ? preset.is_default
+        ? preset.label?.trim() || "Default"
+        : preset.name.trim()
+      : scopedPreset || toModelBadgeLabel(model);
   const rawProvider = preset?.provider
     || (!scopedPreset ? settings?.agent.provider : null)
     || null;
@@ -413,9 +416,22 @@ function modelPresetOptionsFromSettings(
   if (!settings) return [];
   const callOrder = settings.model_call_order ?? [];
   const order = new Map(callOrder.map((name, index) => [name.trim(), index]));
-  const activeDefault = callOrder.length === 0 && (settings.agent.model_preset || "default") === "default";
-  return settings.model_presets
-    .filter((preset) => preset.name.trim())
+  const autoProvider = settings.agent.resolved_provider || settings.agent.provider;
+  const autoProviderRow = settings.providers.find((item) => item.name === autoProvider);
+  const autoOption: ModelPresetOption = {
+    name: "auto",
+    label: "Auto",
+    model: settings.agent.model,
+    provider: autoProvider,
+    providerLabel: autoProvider
+      ? providerDisplayLabel(settings.providers, autoProvider)
+      : null,
+    callOrderIndex: 0,
+    selectionMode: "auto",
+    available: Boolean(settings.agent.model && autoProvider && autoProviderRow?.configured),
+  };
+  const manualOptions = settings.model_presets
+    .filter((preset) => preset.name.trim() && preset.name.trim().toLowerCase() !== "auto")
     .sort((a, b) => {
       const aOrder = order.get(a.name.trim());
       const bOrder = order.get(b.name.trim());
@@ -438,10 +454,12 @@ function modelPresetOptionsFromSettings(
           ? providerDisplayLabel(settings.providers, resolvedProvider)
           : null,
         isDefault: preset.is_default,
-        callOrderIndex: order.get(name) ?? (preset.is_default && activeDefault ? 0 : null),
+        callOrderIndex: null,
+        selectionMode: "manual" as const,
         available: Boolean(preset.model && resolvedProvider && providerRow?.configured),
       };
     });
+  return [autoOption, ...manualOptions];
 }
 
 const HERO_GREETING_KEYS = [
@@ -892,23 +910,22 @@ export function ThreadShell({
   const composerVariant = showHeroComposer ? emptyComposerVariant : "thread";
   const wasShowingHeroComposerRef = useRef(showHeroComposer);
   const sessionModelPreset = session?.modelPreset?.trim() || null;
-  const [localModelPreset, setLocalModelPreset] = useState<string | null>(null);
+  const sessionModelSelection = session?.modelSelectionMode
+    ?? (sessionModelPreset ? "manual" : "auto");
+  const [localModelSelection, setLocalModelSelection] = useState<string | null>(null);
   useEffect(() => {
-    setLocalModelPreset(null);
-  }, [session?.key, sessionModelPreset]);
-  const activeModelPreset = (
-    localModelPreset
-    || sessionModelPreset
-    || settings?.agent.model_preset
-    || "default"
-  );
+    setLocalModelSelection(null);
+  }, [session?.key, sessionModelPreset, sessionModelSelection]);
+  const activeModelSelection = localModelSelection
+    || (sessionModelSelection === "manual" ? sessionModelPreset || "default" : "auto");
+  const activeModelPreset = activeModelSelection === "auto" ? null : activeModelSelection;
   const handleModelPresetChange = useCallback(async (name: string) => {
     if (!chatId) {
-      setLocalModelPreset(name);
+      setLocalModelSelection(name);
       return;
     }
     await client.sendSystemCommand(chatId, `/model ${name}`);
-    setLocalModelPreset(name);
+    setLocalModelSelection(name);
   }, [chatId, client]);
   const modelPresetOptions = useMemo(
     () => modelPresetOptionsFromSettings(settings),
@@ -921,8 +938,13 @@ export function ThreadShell({
     [slashCommands, temporary],
   );
   const modelBadge = useMemo(
-    () => toModelBadgeInfo(modelName, settings, activeModelPreset),
-    [activeModelPreset, modelName, settings],
+    () => toModelBadgeInfo(
+      modelName,
+      settings,
+      activeModelPreset,
+      activeModelSelection === "auto" ? "auto" : "manual",
+    ),
+    [activeModelPreset, activeModelSelection, modelName, settings],
   );
   const modelBadgeLabel = modelBadge.needsSetup
     ? t("thread.composer.modelNotConfigured", { defaultValue: "Model not configured" })
@@ -1321,13 +1343,13 @@ export function ThreadShell({
         setBooting(false);
         return false;
       }
-      if (localModelPreset) {
-        await client.sendSystemCommand(newId, `/model ${localModelPreset}`).catch(() => {});
+      if (localModelSelection && localModelSelection !== "auto") {
+        await client.sendSystemCommand(newId, `/model ${localModelSelection}`).catch(() => {});
       }
       setPendingFirstTargetChatId(newId);
       return true;
     },
-    [booting, client, localModelPreset, onCreateChat, withWorkspaceScope, workspaceScope],
+    [booting, client, localModelSelection, onCreateChat, withWorkspaceScope, workspaceScope],
   );
 
   const handleThreadSend = useCallback(
@@ -1468,7 +1490,7 @@ export function ThreadShell({
           }
           modelLabel={modelBadgeLabel}
           modelDetail={modelBadge.model}
-          modelPreset={activeModelPreset}
+          modelPreset={activeModelSelection}
           modelPresets={modelPresetOptions}
           onModelPresetChange={handleModelPresetChange}
           modelProvider={modelBadge.provider}
@@ -1515,7 +1537,7 @@ export function ThreadShell({
           }
           modelLabel={modelBadgeLabel}
           modelDetail={modelBadge.model}
-          modelPreset={activeModelPreset}
+          modelPreset={activeModelSelection}
           modelPresets={modelPresetOptions}
           onModelPresetChange={handleModelPresetChange}
           modelProvider={modelBadge.provider}

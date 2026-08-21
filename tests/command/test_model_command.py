@@ -19,6 +19,7 @@ from nanobot.config.schema import ModelPresetConfig
 from nanobot.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
     model_preset_from_metadata,
+    model_selection_mode_from_metadata,
 )
 
 
@@ -81,8 +82,9 @@ async def test_model_command_lists_current_and_available_presets(tmp_path) -> No
     out = await cmd_model(_ctx(loop, "/model"))
 
     assert "Current model: `base-model`" in out.content
-    assert "Current preset: `default`" in out.content
-    assert "Available presets: `default`, `fast`" in out.content
+    assert "Selection mode: `auto`" in out.content
+    assert "Current preset: `auto`" in out.content
+    assert "Available selections: `auto`, `default`, `fast`" in out.content
     assert "`fast`" in out.content
     assert out.metadata == {"render_as": "text"}
 
@@ -93,7 +95,7 @@ async def test_model_command_switches_preset(tmp_path) -> None:
 
     out = await cmd_model(_ctx(loop, "/model fast", args="fast"))
 
-    assert "Switched model preset to `fast`." in out.content
+    assert "Switched to manual model preset `fast`." in out.content
     assert "Scope: current session" in out.content
     assert "Model: `openai/gpt-4.1`" in out.content
     assert _saved_model_preset(loop) == "fast"
@@ -120,7 +122,7 @@ async def test_model_command_accepts_canonical_names_with_spaces(tmp_path) -> No
         _ctx(loop, "/model deep research", args="deep research"),
     )
 
-    assert "Switched model preset to `Deep Research`." in out.content
+    assert "Switched to manual model preset `Deep Research`." in out.content
     assert _saved_model_preset(loop) == "Deep Research"
 
 
@@ -131,11 +133,24 @@ async def test_model_command_switches_back_to_default(tmp_path) -> None:
 
     out = await cmd_model(_ctx(loop, "/model default", args="default"))
 
-    assert "Switched model preset to `default`." in out.content
+    assert "Switched to manual model preset `default`." in out.content
     assert _saved_model_preset(loop) == "default"
     assert loop.model_preset is None
     assert loop.model == "base-model"
     assert loop.context_window_tokens == 1000
+
+
+@pytest.mark.asyncio
+async def test_model_command_switches_manual_session_back_to_auto(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+    await cmd_model(_ctx(loop, "/model fast", args="fast"))
+
+    out = await cmd_model(_ctx(loop, "/model auto", args="auto"))
+    session = loop.sessions.get_or_create("cli:direct")
+
+    assert "Switched model selection to `auto`." in out.content
+    assert _saved_model_preset(loop) is None
+    assert model_selection_mode_from_metadata(session.metadata) == "auto"
 
 
 @pytest.mark.asyncio
@@ -146,7 +161,7 @@ async def test_model_command_unknown_preset_keeps_old_state(tmp_path) -> None:
 
     assert "Could not switch model preset" in out.content
     assert "\"model_preset" not in out.content
-    assert "Available presets: `default`, `fast`" in out.content
+    assert "Available selections: `auto`, `default`, `fast`" in out.content
     assert loop.model_preset is None
     assert loop.model == "base-model"
 
@@ -192,7 +207,7 @@ async def test_model_command_registered_as_exact_and_prefix(tmp_path) -> None:
     assert out.chat_id == "direct"
     assert out.metadata == {"render_as": "text"}
     assert out.content == "\n".join([
-        "Switched model preset to `fast`.",
+        "Switched to manual model preset `fast`.",
         "- Scope: current session",
         "- Model: `openai/gpt-4.1`",
         "- Context window: 32768",
@@ -211,7 +226,7 @@ async def test_model_command_does_not_change_another_session(tmp_path) -> None:
         CommandContext(msg=other, session=None, key=other.session_key, raw="/model", loop=loop)
     )
 
-    assert "Current preset: `default`" in out.content
+    assert "Current preset: `auto`" in out.content
     assert _saved_model_preset(loop) == "fast"
 
 
@@ -227,10 +242,10 @@ async def test_model_command_reports_and_recovers_removed_session_preset(tmp_pat
 
     assert status is not None
     assert "model_preset 'removed' not found" in status.content
-    assert "Available presets: `default`, `fast`" in status.content
+    assert "Available selections: `auto`, `default`, `fast`" in status.content
     assert "Switch with `/model <preset>`" in status.content
     assert switched is not None
-    assert "Switched model preset to `default`." in switched.content
+    assert "Switched to manual model preset `default`." in switched.content
     assert _saved_model_preset(loop) == "default"
 
 

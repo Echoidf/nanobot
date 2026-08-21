@@ -2400,6 +2400,25 @@ def replay_transcript_to_ui_messages(
                 if m.get("isStreaming"):
                     messages[i] = {**m, "isStreaming": False}
             prune_reasoning_only()
+            error_message = rec.get("error_message")
+            stop_reason = rec.get("stop_reason")
+            turn_fields = _turn_fields(rec, "complete")
+            if (
+                isinstance(error_message, str)
+                and error_message.strip()
+                and stop_reason in {"error", "tool_error", "empty_final_response"}
+                and not any(
+                    message.get("role") == "assistant"
+                    and _same_turn(message, turn_fields)
+                    and str(message.get("content") or "").strip() == error_message.strip()
+                    for message in messages
+                )
+            ):
+                absorb_complete(
+                    {"content": error_message.strip(), **turn_fields},
+                    idx,
+                    _created_at_ms(rec, idx),
+                )
             lat = rec.get("latency_ms")
             if isinstance(lat, (int, float)) and lat >= 0:
                 stamp_latency(int(lat))

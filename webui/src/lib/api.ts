@@ -193,6 +193,7 @@ export async function listSessions(
     title?: string;
     preview?: string;
     model_preset?: string | null;
+    model_selection_mode?: "auto" | "manual";
     run_started_at?: number | null;
     workspace_scope?: WorkspaceScopePayload | null;
     handle?: SessionHandle | null;
@@ -213,6 +214,8 @@ export async function listSessions(
       title: s.title ?? "",
       preview: s.preview ?? "",
       modelPreset: s.model_preset ?? null,
+      modelSelectionMode: s.model_selection_mode
+        ?? (s.model_preset ? "manual" : "auto"),
       runStartedAt: s.run_started_at ?? null,
       workspaceScope: s.workspace_scope ?? null,
       handle,

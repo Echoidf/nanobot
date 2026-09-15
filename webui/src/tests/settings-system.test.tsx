@@ -185,6 +185,74 @@ describe("Settings system domains", () => {
     });
   });
 
+  it("shows the live runtime tool catalog on System", async () => {
+    const base = settingsPayload();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/settings") return jsonResponse(base);
+      if (url === "/api/settings/api-service") {
+        return jsonResponse({
+          installed: false,
+          running: false,
+          managed: false,
+          host: "127.0.0.1",
+          port: 8900,
+          timeout: 120,
+          api_key_hint: null,
+          endpoint: "http://127.0.0.1:8900/v1",
+          command: "nanodesk serve",
+        });
+      }
+      if (url === "/api/settings/nanodesk-features") {
+        return jsonResponse({ features: [], enabled_count: 0 });
+      }
+      if (url === "/api/settings/runtime-tools") {
+        return jsonResponse({
+          restrict_to_workspace: true,
+          counts: { builtin: 1, mcp: 1, runtime: 1, total: 3 },
+          tools: [
+            {
+              name: "read_file",
+              description: "Read a file",
+              source: "builtin",
+              category: "filesystem",
+              parameter_count: 1,
+              parameters: [{ name: "path", type: "string", required: true, description: "Target path" }],
+            },
+            {
+              name: "mcp_linear_search",
+              description: "Search Linear",
+              source: "mcp",
+              category: "mcp",
+              parameter_count: 1,
+              parameters: [{ name: "query", type: "string", required: true, description: null }],
+            },
+            {
+              name: "my",
+              description: "Recall identity",
+              source: "runtime",
+              category: "runtime",
+              parameter_count: 0,
+              parameters: [],
+            },
+          ],
+        });
+      }
+      return jsonResponse({});
+    }));
+
+    renderSettingsView({ initialSection: "runtime", initialSettings: base, showSidebar: true });
+
+    expect(await screen.findByText("Runtime tools")).toBeInTheDocument();
+    expect(await screen.findByText("Built-in")).toBeInTheDocument();
+    expect(screen.getByText("MCP")).toBeInTheDocument();
+    expect(screen.getByText("Runtime")).toBeInTheDocument();
+    expect(screen.getByText("read_file")).toBeInTheDocument();
+    expect(screen.getByText("mcp_linear_search")).toBeInTheDocument();
+    expect(screen.getByText("my")).toBeInTheDocument();
+    expect(screen.getByText(/restricted to the default workspace/i)).toBeInTheDocument();
+  });
+
   it("starts the managed API server from System", async () => {
     const base = settingsPayload();
     const stopped = {
@@ -196,13 +264,13 @@ describe("Settings system domains", () => {
       timeout: 120,
       api_key_hint: null,
       endpoint: "http://127.0.0.1:8900/v1",
-      command: "nanobot serve",
+      command: "nanodesk serve",
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/settings") return jsonResponse(base);
       if (url === "/api/settings/api-service") return jsonResponse(stopped);
-      if (url === "/api/settings/nanobot-features") {
+      if (url === "/api/settings/nanodesk-features") {
         return jsonResponse({ features: [], enabled_count: 0 });
       }
       return jsonResponse({});
@@ -295,7 +363,7 @@ describe("Settings system domains", () => {
       if (url === "/api/settings/mcp-presets") {
         return jsonResponse({ presets: [], installed_count: 0 });
       }
-      if (url === "/api/settings/nanobot-features") {
+      if (url === "/api/settings/nanodesk-features") {
         return jsonResponse({
           features: [
             {
@@ -320,7 +388,7 @@ describe("Settings system domains", () => {
 
     expect(await screen.findByText("AnyGen")).toBeInTheDocument();
     expect(
-      screen.queryByText("Add tools to nanobot, then @ them in chat."),
+      screen.queryByText("Add tools to nanodesk, then @ them in chat."),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ready" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Apps" })).toHaveAttribute("aria-pressed", "true");
@@ -330,13 +398,13 @@ describe("Settings system domains", () => {
     expect(screen.queryByText("0 ready")).not.toBeInTheDocument();
   });
 
-  it("shows nanobot optional features and enables one", async () => {
+  it("shows nanodesk optional features and enables one", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/settings") return jsonResponse(settingsPayload());
       if (url === "/api/settings/cli-apps") return jsonResponse({ apps: [], installed_count: 0 });
       if (url === "/api/settings/mcp-presets") return jsonResponse({ presets: [], installed_count: 0 });
-      if (url === "/api/settings/nanobot-features") {
+      if (url === "/api/settings/nanodesk-features") {
         return jsonResponse({
           features: [{
             name: "matrix",
@@ -404,11 +472,11 @@ describe("Settings system domains", () => {
     const matrixRow = await screen.findByRole("button", { name: "View Matrix settings" });
     expect(matrixRow).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByText("Matrix")).toHaveLength(2);
-    expect(screen.getAllByText("Use nanobot from Matrix rooms.")).toHaveLength(2);
-    expect(screen.queryByText(/Enabling Nanobot features may install Python packages/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Use nanodesk from Matrix rooms.")).toHaveLength(2);
+    expect(screen.queryByText(/Enabling Nanodesk features may install Python packages/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Matrix channel" }));
     expect(screen.getByRole("dialog", { name: "Install support for Matrix?" })).toBeInTheDocument();
-    expect(screen.getByText("nanobot will add what Matrix needs, then turn it on. Continue?")).toBeInTheDocument();
+    expect(screen.getByText("nanodesk will add what Matrix needs, then turn it on. Continue?")).toBeInTheDocument();
     expect(requestMutationMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Install and enable" }));
 
@@ -423,7 +491,7 @@ describe("Settings system domains", () => {
       expect(screen.getByRole("switch", { name: "Matrix channel" })).toHaveAttribute("aria-checked", "true"),
     );
     expect(screen.queryByText("Enabled channel 'matrix'")).not.toBeInTheDocument();
-    expect(screen.queryByText("Restart nanobot to apply updated channel support.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart nanodesk to apply updated channel support.")).not.toBeInTheDocument();
     expect(screen.getAllByText("On").length).toBeGreaterThan(0);
 
     expect(screen.getByLabelText("Homeserver")).toBeInTheDocument();

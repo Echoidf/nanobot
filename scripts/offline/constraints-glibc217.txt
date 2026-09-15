@@ -1,0 +1,14 @@
+# Downgrades for old-glibc targets (manylinux2014 / glibc 2.17: CentOS/RHEL 7,
+# Debian 9, Ubuntu 16.04/18.04 backports).
+#
+# Used automatically by scripts/package_offline.sh --old-glibc, or explicitly:
+#   scripts/package_offline.sh --constraints scripts/offline/constraints-glibc217.txt
+#
+# Each entry is a package whose *newest* release only ships manylinux_2_27/2_28
+# wheels and has NO pure-Python (py3-none-any) fallback. Keep this list short:
+# every pin here freezes an upgrade path.
+#
+# Packages that ship a py3-none-any wheel (like dulwich >= 0.24) need no pin here:
+# pip naturally picks the pure wheel when only glibc <= 2.17 tags are allowed.
+pillow==10.4.0        # 11.0+: no manylinux_2_17 wheel (2_27 minimum), no pure wheel
+tiktoken==0.6.0       # 0.7+: manylinux_2_28 minimum, no pure wheel

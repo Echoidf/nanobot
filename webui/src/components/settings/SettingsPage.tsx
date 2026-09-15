@@ -10,6 +10,7 @@ import {
   ModelsSettings,
 } from "@/components/settings/models/ModelsSettings";
 import {
+  ProviderDeleteDialog,
   ProviderOAuthLoginDialog,
   ProvidersSettings,
   providerFormFromRow,
@@ -17,7 +18,7 @@ import {
 import { AppearanceSettings, OverviewSettings } from "@/components/settings/overview/OverviewSettings";
 import { SettingsSidebar, standaloneSectionTitle } from "@/components/settings/SettingsSidebar";
 import {
-  NanobotFeatureInstallDialog,
+  NanodeskFeatureInstallDialog,
   SettingsGroup,
   SettingsRow,
 } from "@/components/settings/shared/SettingsControls";
@@ -97,6 +98,7 @@ export function SettingsPage({
     handleAutomationEdit,
     handleCliAppAction,
     handleDeleteModelConfiguration,
+    handleDeleteProvider,
     handleImportMcpConfig,
     handleMcpOAuthCancel,
     handleMcpOAuthComplete,
@@ -105,7 +107,7 @@ export function SettingsPage({
     handleMcpPresetAction,
     handleMcpToolsChange,
     handleMigrateModelConfigurations,
-    handleNanobotFeatureAction,
+    handleNanodeskFeatureAction,
     handleSaveCustomMcp,
     handleToggleProvider,
     handleWebSearchProviderChange,
@@ -139,11 +141,11 @@ export function SettingsPage({
     modelPresetEditingName,
     modelPresetNameError,
     modelPresetPendingDelete,
-    nanobotFeatureAction,
-    nanobotFeatureConfirm,
-    nanobotFeatures,
-    nanobotFeaturesError,
-    nanobotFeaturesLoading,
+    nanodeskFeatureAction,
+    nanodeskFeatureConfirm,
+    nanodeskFeatures,
+    nanodeskFeaturesError,
+    nanodeskFeaturesLoading,
     networkSafetyDirty,
     networkSafetyForm,
     networkSafetySaving,
@@ -153,6 +155,7 @@ export function SettingsPage({
     providerOAuthDialogError,
     providerOAuthFlow,
     providerOAuthResponse,
+    providerPendingDelete,
     providerSaving,
     remoteBrowserAccess,
     resetWebSearchDraft,
@@ -190,13 +193,14 @@ export function SettingsPage({
     setModelPresetEditingName,
     setModelPresetNameError,
     setModelPresetPendingDelete,
-    setNanobotFeatureConfirm,
-    setNanobotFeatures,
-    setNanobotFeaturesError,
+    setNanodeskFeatureConfirm,
+    setNanodeskFeatures,
+    setNanodeskFeaturesError,
     setNetworkSafetyForm,
     setProviderForms,
     setProviderOAuthDialogError,
     setProviderOAuthResponse,
+    setProviderPendingDelete,
     setTranscriptionForm,
     setWebSearchForm,
     setWebSearchKeyEditing,
@@ -273,9 +277,9 @@ export function SettingsPage({
             />
             <ProvidersSettings
               settings={settings}
-              nanobotFeatures={nanobotFeatures}
-              featureAction={nanobotFeatureAction}
-              capabilityError={nanobotFeaturesError}
+              nanodeskFeatures={nanodeskFeatures}
+              featureAction={nanodeskFeatureAction}
+              capabilityError={nanodeskFeaturesError}
               expandedProvider={expandedProvider}
               providerForms={providerForms}
               visibleProviderKeys={visibleProviderKeys}
@@ -302,6 +306,7 @@ export function SettingsPage({
                 }))
               }
               onSaveProvider={saveProvider}
+              onDeleteProvider={setProviderPendingDelete}
               onCreateCustomProvider={createCustomProvider}
               onProviderOAuthLogin={(provider) => runProviderOAuth(provider, "login")}
               onProviderOAuthLogout={(provider) => runProviderOAuth(provider, "logout")}
@@ -367,27 +372,27 @@ export function SettingsPage({
             isRestarting={isRestarting || hostEngineApplying}
             requiresRestartPending={pendingRestartSections.browser}
             olostepFeature={featureCatalog.find((feature) => feature.name === "olostep")}
-            olostepInstalling={nanobotFeatureAction === "enable:olostep"}
-            capabilityError={nanobotFeaturesError}
+            olostepInstalling={nanodeskFeatureAction === "enable:olostep"}
+            capabilityError={nanodeskFeaturesError}
           />
         );
       case "channels":
         return (
           <ChannelsSettings
             token={token}
-            nanobotFeatures={nanobotFeatures}
-            loading={nanobotFeaturesLoading}
+            nanodeskFeatures={nanodeskFeatures}
+            loading={nanodeskFeaturesLoading}
             query={channelsQuery}
-            actionKey={nanobotFeatureAction}
+            actionKey={nanodeskFeatureAction}
             chatAppsDocsUrl={settings.docs?.chat_apps_url}
             showBrandLogos={localPrefs.brandLogos}
-            error={nanobotFeaturesError}
+            error={nanodeskFeaturesError}
             requiresRestartPending={pendingRestartSections.runtime}
             onQueryChange={setChannelsQuery}
-            onAction={handleNanobotFeatureAction}
-            onFeaturesUpdate={setNanobotFeatures}
+            onAction={handleNanodeskFeatureAction}
+            onFeaturesUpdate={setNanodeskFeatures}
             onDismissStatus={() => {
-              setNanobotFeaturesError(null);
+              setNanodeskFeaturesError(null);
             }}
             onRestart={restartViaSettingsSurface}
             isRestarting={isRestarting || hostEngineApplying}
@@ -480,6 +485,7 @@ export function SettingsPage({
       case "runtime":
         return (
           <RuntimeSettings
+            token={token}
             form={form}
             settings={settings}
             onRestart={restartViaSettingsSurface}
@@ -490,9 +496,9 @@ export function SettingsPage({
             apiServiceAction={apiServiceAction}
             apiServiceError={apiServiceError}
             langfuseFeature={featureCatalog.find((feature) => feature.name === "langfuse")}
-            capabilitiesLoading={nanobotFeaturesLoading}
-            capabilityAction={nanobotFeatureAction}
-            capabilityError={nanobotFeaturesError}
+            capabilitiesLoading={nanodeskFeaturesLoading}
+            capabilityAction={nanodeskFeatureAction}
+            capabilityError={nanodeskFeaturesError}
             onApiServiceAction={handleApiServiceAction}
             onInstallCapability={(name) => void installCapabilities([name])}
           />
@@ -537,6 +543,15 @@ export function SettingsPage({
         onConfirm={handleDeleteModelConfiguration}
       />
 
+      <ProviderDeleteDialog
+        provider={providerPendingDelete}
+        deleting={providerSaving === providerPendingDelete?.name}
+        onOpenChange={(open) => {
+          if (!open) setProviderPendingDelete(null);
+        }}
+        onConfirm={handleDeleteProvider}
+      />
+
       <ProviderOAuthLoginDialog
         flow={providerOAuthFlow}
         providerLabel={
@@ -566,13 +581,13 @@ export function SettingsPage({
         onClose={closeProviderOAuthFlow}
       />
 
-      <NanobotFeatureInstallDialog
-        feature={nanobotFeatureConfirm}
-        installing={nanobotFeatureAction === `enable:${nanobotFeatureConfirm?.name ?? ""}`}
+      <NanodeskFeatureInstallDialog
+        feature={nanodeskFeatureConfirm}
+        installing={nanodeskFeatureAction === `enable:${nanodeskFeatureConfirm?.name ?? ""}`}
         onOpenChange={(open) => {
-          if (!open) setNanobotFeatureConfirm(null);
+          if (!open) setNanodeskFeatureConfirm(null);
         }}
-        onConfirm={(feature) => handleNanobotFeatureAction("enable", feature.name, true)}
+        onConfirm={(feature) => handleNanodeskFeatureAction("enable", feature.name, true)}
       />
 
       <AutomationDeleteDialog
@@ -604,8 +619,8 @@ export function SettingsPage({
           data-testid="settings-section-transition"
           data-settings-section={activeSection}
           className={cn(
-            "mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-1 px-4 py-6 duration-200 ease-out",
-            "motion-reduce:animate-none sm:px-8 sm:py-8 lg:py-12",
+            "mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-1 px-4 py-7 duration-200 ease-out",
+            "motion-reduce:animate-none sm:px-8 sm:py-9 lg:py-11",
             activeSection === "channels" ? "max-w-[1240px] xl:px-10" : "max-w-[920px]",
             activeSection === "channels" && "flex min-h-full flex-col xl:h-full xl:min-h-0",
             hostChromeInset && "pt-[4.25rem] sm:pt-[4.25rem] lg:pt-[4.75rem]",
@@ -621,7 +636,7 @@ export function SettingsPage({
                 <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
                 {t("settings.backToChat")}
               </button>
-              <h1 className="text-[24px] font-normal leading-tight tracking-normal text-foreground sm:text-[28px]">
+              <h1 className="text-[24px] font-semibold leading-tight tracking-normal text-foreground sm:text-[28px]">
                 {t(`settings.nav.${activeSection}`, {
                   defaultValue: standaloneSectionTitle(activeSection),
                 })}

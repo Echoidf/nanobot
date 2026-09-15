@@ -29,6 +29,7 @@ import {
   CircleHelp,
   CornerDownRight,
   FileText,
+  FolderOpen,
   GripVertical,
   History,
   ImageIcon,
@@ -82,8 +83,9 @@ import {
 import { useClipboardAndDrop } from "@/hooks/useClipboardAndDrop";
 import { useLogoFallback } from "@/hooks/useLogoFallback";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import type { SendAttachment, SendOptions } from "@/hooks/useNanobotStream";
+import type { SendAttachment, SendOptions } from "@/hooks/useNanodeskStream";
 import { useVoiceRecorder, type VoiceRecorderErrorKey } from "@/hooks/useVoiceRecorder";
+import { useWorkspaceFileRefs } from "@/hooks/useWorkspaceFileRefs";
 import type {
   CliAppInfo,
   ChatSummary,
@@ -112,6 +114,11 @@ import {
   readDraggedSession,
 } from "@/lib/session-drag";
 import { formatQuotedUserMessage } from "@/lib/user-message-quote";
+import {
+  matchMentionSpans,
+  mentionLeafNeedle,
+  planMentionPaths,
+} from "@/lib/mention-path";
 import { cn } from "@/lib/utils";
 
 const VOICE_SHORTCUT_CODE = "KeyD";
@@ -210,6 +217,8 @@ interface ThreadComposerProps {
   /** Sustained objective for this chat (WebSocket ``goal_state``). */
   goalState?: GoalStateWsPayload;
   workspaceScope?: WorkspaceScopePayload | null;
+  workspaceSessionKey?: string | null;
+  workspaceFileRefToken?: string;
   workspaceControlsHidden?: boolean;
   workspaceDefaultScope?: WorkspaceScopePayload | null;
   workspaceControls?: WorkspacesPayload["controls"] | null;
@@ -243,9 +252,9 @@ const SLASH_PALETTE_GAP_PX = 8;
 const SLASH_PALETTE_MAX_HEIGHT_PX = 288;
 const SLASH_PALETTE_MIN_HEIGHT_PX = 144;
 const SLASH_PALETTE_CHROME_PX = 12;
-const SLASH_RECENTS_STORAGE_KEY = "nanobot.webui.slashCommandRecents";
+const SLASH_RECENTS_STORAGE_KEY = "nanodesk.webui.slashCommandRecents";
 const SLASH_RECENTS_LIMIT = 5;
-const QUEUED_PROMPTS_STORAGE_PREFIX = "nanobot.webui.composerQueuedGuidance.v1:";
+const QUEUED_PROMPTS_STORAGE_PREFIX = "nanodesk.webui.composerQueuedGuidance.v1:";
 const QUEUED_PROMPTS_LIMIT = 20;
 const QUEUED_PROMPT_MAX_CHARS = 4000;
 const SESSION_MENTIONS_LIMIT = 8;
@@ -311,7 +320,10 @@ interface QueuedPromptImage {
 }
 
 interface CliAppMentionQuery {
+  /** Lowercased token used for session/cli/mcp filtering. */
   query: string;
+  /** Original token used for workspace path lookup (preserves case/slashes). */
+  rawQuery: string;
   start: number;
   end: number;
 }
@@ -327,6 +339,7 @@ type MentionCandidate = {
       logoUrl: string | null;
       initials: string;
     }
+  | { kind: "file"; file: import("@/lib/types").WorkspaceFileCandidate }
 );
 
 interface MentionInsertion {
@@ -793,10 +806,10 @@ function GoalStateStrip({
       {goalPanelOpen && canExpandGoal && markdownBody ? (
         <div
           ref={panelRef}
-          id="nanobot-goal-panel-root"
+          id="nanodesk-goal-panel-root"
           role="dialog"
           aria-modal="false"
-          aria-labelledby="nanobot-goal-panel-title"
+          aria-labelledby="nanodesk-goal-panel-title"
           tabIndex={-1}
           className={cn(
             "absolute bottom-[calc(100%+8px)] left-3 right-3 z-[50] flex max-w-none flex-col overflow-hidden",
@@ -807,7 +820,7 @@ function GoalStateStrip({
         >
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/[0.06] px-3 py-2 dark:border-white/[0.08]">
             <h2
-              id="nanobot-goal-panel-title"
+              id="nanodesk-goal-panel-title"
               className="min-w-0 truncate text-[13px] font-semibold tracking-tight text-foreground"
             >
               {t("thread.composer.goalStateSheetTitle")}
@@ -826,7 +839,7 @@ function GoalStateStrip({
             </button>
           </div>
           <div
-            id="nanobot-goal-panel-scroll"
+            id="nanodesk-goal-panel-scroll"
             className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-3 pb-3 pt-2"
           >
             <MarkdownText className="max-w-none text-[13.5px] leading-relaxed text-foreground/90">
@@ -860,7 +873,7 @@ function GoalStateStrip({
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 aria-expanded={goalPanelOpen}
-                aria-controls={goalPanelOpen ? "nanobot-goal-panel-root" : undefined}
+                aria-controls={goalPanelOpen ? "nanodesk-goal-panel-root" : undefined}
                 aria-label={t("thread.composer.goalStateExpandAria")}
                 title={t("thread.composer.goalStateExpandAria")}
                 onClick={() => setGoalPanelOpen((o) => !o)}
@@ -906,6 +919,8 @@ export function ThreadComposer({
   onTranscribeAudio,
   goalState,
   workspaceScope = null,
+  workspaceSessionKey = null,
+  workspaceFileRefToken = "",
   workspaceControlsHidden = false,
   workspaceDefaultScope = null,
   workspaceControls = null,
@@ -923,6 +938,7 @@ export function ThreadComposer({
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [selectedSessionMentions, setSelectedSessionMentions] = useState<SessionMention[]>([]);
+  const [selectedPathRefs, setSelectedPathRefs] = useState<Array<{ path: string; kind: "file" | "folder" }>>([]);
   const [sessionDragPreview, setSessionDragPreview] = useState<{
     mention: SessionMention;
     start: number;
@@ -961,8 +977,7 @@ export function ThreadComposer({
     [pendingQueueKey],
   );
   const projectPickerAvailable =
-    isHero
-    && !!workspaceDefaultScope
+    !!workspaceDefaultScope
     && !!onWorkspaceScopeChange
     && workspaceControls?.can_change_project !== false;
   const showProjectPicker = projectPickerAvailable && !workspaceControlsHidden;
@@ -1236,15 +1251,27 @@ export function ThreadComposer({
     if (interactionDisabled || cliAppMenuDismissed) return null;
     const caret = Math.min(Math.max(cursorPosition, 0), value.length);
     const beforeCaret = value.slice(0, caret);
-    const match = /(?:^|\s)@([\p{L}\p{N}_-]*)$/iu.exec(beforeCaret);
+    // Allow path-like tokens so @src/main.py and @docs/ can complete workspace refs.
+    const match = /(?:^|\s)@([\p{L}\p{N}_./\\-]*)$/iu.exec(beforeCaret);
     if (!match) return null;
-    const query = match[1].toLowerCase();
+    const rawQuery = match[1] ?? "";
     return {
-      query,
-      start: caret - query.length - 1,
+      query: rawQuery.toLowerCase(),
+      rawQuery,
+      start: caret - rawQuery.length - 1,
       end: caret,
     };
   }, [cliAppMenuDismissed, cursorPosition, interactionDisabled, value]);
+  const workspaceFileQuery = cliAppMention?.rawQuery ?? "";
+  const workspaceFiles = useWorkspaceFileRefs(
+    workspaceFileRefToken,
+    workspaceScope,
+    workspaceSessionKey,
+    workspaceFileQuery,
+    cliAppMention !== null
+      && Boolean(workspaceFileRefToken)
+      && Boolean(workspaceScope?.project_path),
+  );
 
   const availableSessionMentions = useMemo(
     () => sessionMentionOptions(sessions),
@@ -1342,8 +1369,32 @@ export function ThreadComposer({
         logoUrl: preset.logo_url ?? null,
         initials: mcpPresetInitials(preset),
       }));
+    const needle = cliAppMention.rawQuery.replace(/\\/g, "/").toLowerCase();
+    const fileCandidates: MentionCandidate[] = [...workspaceFiles.candidates]
+      .filter((file) => {
+        if (!needle || needle.endsWith("/")) return true;
+        const path = file.path.toLowerCase();
+        const name = file.name.toLowerCase();
+        const leaf = needle.includes("/") ? needle.slice(needle.lastIndexOf("/") + 1) : needle;
+        return (
+          path.includes(needle)
+          || name.includes(needle)
+          || (leaf ? path.includes(leaf) || name.includes(leaf) : true)
+        );
+      })
+      // Preserve the gateway's relevance ranking: it puts folders first and
+      // demotes tool noise (.nanobot, .claude, __pycache__, ...) to the end.
+      // Re-sorting here by name would push hidden folders back to the top.
+      .slice(0, 8)
+      .map((file) => ({
+        kind: "file" as const,
+        name: file.path,
+        displayName: file.kind === "folder" ? `${file.name}/` : file.name,
+        file,
+      }));
     const groups = [
-      { candidates: sessionCandidates, reserved: 4 },
+      { candidates: fileCandidates, reserved: 5 },
+      { candidates: sessionCandidates, reserved: 3 },
       { candidates: cliCandidates, reserved: 2 },
       { candidates: mcpCandidates, reserved: 2 },
     ];
@@ -1353,13 +1404,13 @@ export function ThreadComposer({
       remaining -= count;
       return count;
     });
-    for (const index of [0, 1, 2]) {
+    for (const index of [0, 1, 2, 3]) {
       const extra = Math.min(remaining, groups[index].candidates.length - counts[index]);
       counts[index] += extra;
       remaining -= extra;
     }
     return groups.flatMap(({ candidates }, index) => candidates.slice(0, counts[index]));
-  }, [activeSessionMentions, availableSessionMentions, cliAppMention, cliApps, mcpPresets]);
+  }, [activeSessionMentions, availableSessionMentions, cliAppMention, cliApps, mcpPresets, workspaceFiles.candidates]);
 
   const showCliAppMenu = filteredMentionCandidates.length > 0;
   const showAnyPalette = showSlashMenu || showCliAppMenu;
@@ -1480,6 +1531,7 @@ export function ThreadComposer({
     secondEnterPromptIdRef.current = null;
     setValue("");
     setSelectedSessionMentions([]);
+    setSelectedPathRefs([]);
     setInlineError(null);
     setSlashMenuDismissed(false);
     setCliAppMenuDismissed(false);
@@ -1620,6 +1672,38 @@ export function ThreadComposer({
 
   const insertMentionCandidate = useCallback(
     (candidate: MentionCandidate, start: number, end: number) => {
+      if (candidate.kind === "file") {
+        const pathToken = candidate.file.kind === "folder"
+          ? (candidate.file.path.endsWith("/") ? candidate.file.path : `${candidate.file.path}/`)
+          : candidate.file.path;
+        setSelectedPathRefs((current) => current.some((ref) => ref.path === candidate.file.path)
+          ? current
+          : [...current, { path: candidate.file.path, kind: candidate.file.kind }].slice(0, 20));
+        // Folders keep the trailing slash and leave the mention menu open for nested paths.
+        const keepMenuOpen = candidate.file.kind === "folder";
+        const insertion = keepMenuOpen
+          ? (() => {
+              const from = Math.min(Math.max(start, 0), value.length);
+              const to = Math.min(Math.max(end, from), value.length);
+              const next = `${value.slice(0, from)}@${pathToken}${value.slice(to)}`;
+              const cursor = from + pathToken.length + 1;
+              return { value: next, cursor, tokenStart: from, tokenEnd: cursor };
+            })()
+          : mentionInsertion(value, pathToken, start, end);
+        setValue(insertion.value);
+        setCursorPosition(insertion.cursor);
+        setCliAppMenuDismissed(!keepMenuOpen);
+        setSlashMenuDismissed(false);
+        setInlineError(null);
+        resizeTextarea();
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(insertion.cursor, insertion.cursor);
+        });
+        return;
+      }
       if (candidate.kind === "session") {
         const alreadySelected = activeSessionMentions.some(
           (mention) => mention.session_key === candidate.mention.session_key,
@@ -1737,6 +1821,7 @@ export function ThreadComposer({
   const clearComposerText = useCallback((restoreFocus = true) => {
     setValue("");
     setSelectedSessionMentions([]);
+    setSelectedPathRefs([]);
     setInlineError(null);
     setSlashMenuDismissed(false);
     setCliAppMenuDismissed(false);
@@ -1837,6 +1922,7 @@ export function ThreadComposer({
         const options: SendOptions | undefined = (
           prompt.quotedContext
           || prompt.sessionMentions?.length
+          || selectedPathRefs.length
           || isStreaming
         )
           ? {
@@ -1844,6 +1930,7 @@ export function ThreadComposer({
               ...(prompt.sessionMentions?.length
                 ? { sessionMentions: prompt.sessionMentions }
                 : {}),
+              ...(selectedPathRefs.length ? { pathRefs: selectedPathRefs } : {}),
               ...(isStreaming ? { continueActiveTurn: true } : {}),
             }
           : undefined;
@@ -1851,7 +1938,7 @@ export function ThreadComposer({
       }
       requestAnimationFrame(() => textareaRef.current?.focus());
     },
-    [isStreaming, onSend],
+    [isStreaming, onSend, selectedPathRefs],
   );
 
   const sendNextQueuedPrompt = useCallback(() => {
@@ -1932,6 +2019,7 @@ export function ThreadComposer({
       attachedCliApps.length > 0
       || attachedMcpPresets.length > 0
       || activeSessionMentions.length > 0
+      || selectedPathRefs.length > 0
       || normalizedQuotedContext
         ? {
             ...(attachedCliApps.length > 0 ? { cliApps: attachedCliApps } : {}),
@@ -1939,6 +2027,7 @@ export function ThreadComposer({
             ...(activeSessionMentions.length > 0
               ? { sessionMentions: activeSessionMentions }
               : {}),
+            ...(selectedPathRefs.length > 0 ? { pathRefs: selectedPathRefs } : {}),
             ...(normalizedQuotedContext ? { quotedContext: normalizedQuotedContext } : {}),
           }
         : undefined;
@@ -1946,7 +2035,8 @@ export function ThreadComposer({
       payload === undefined
       && attachedCliApps.length === 0
       && attachedMcpPresets.length === 0
-      && activeSessionMentions.length === 0;
+      && activeSessionMentions.length === 0
+      && selectedPathRefs.length === 0;
     const slashLifecycle = hasPlainTextCommandPayload
       ? slashCommandLifecycle(content, slashCommands)
       : null;
@@ -2002,6 +2092,7 @@ export function ThreadComposer({
     activeCliMentionApps,
     activeMcpPresetMentions,
     activeSessionMentions,
+    selectedPathRefs,
     canSend,
     clear,
     clearComposerText,
@@ -2214,6 +2305,7 @@ export function ThreadComposer({
           selectedIndex={selectedCliAppIndex}
           layout={slashPaletteLayout}
           isHero={isHero}
+          highlightQuery={cliAppMention?.rawQuery ?? ""}
           onHover={setSelectedCliAppIndex}
           onChoose={chooseMentionCandidate}
         />
@@ -2223,8 +2315,8 @@ export function ThreadComposer({
         className={cn(
           "thread-composer-surface group/composer relative mx-auto flex w-full flex-col overflow-visible transition-all duration-200",
           isHero
-            ? "max-w-[58rem] rounded-prominent bg-muted/30 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]"
-            : "max-w-[49.5rem] rounded-panel bg-muted/30 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]",
+            ? "max-w-[52rem] rounded-panel border border-border/55 bg-muted/30 focus-within:border-cyan-500/45 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]"
+            : "max-w-[49.5rem] rounded-panel border border-border/55 bg-muted/30 focus-within:border-cyan-500/45 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]",
           interactionDisabled && "opacity-60",
           sessionDragPreview && "ring-1 ring-primary/25",
           isDragging && "ring-2 ring-primary/40 motion-reduce:ring-0 motion-reduce:border-primary",
@@ -2413,13 +2505,29 @@ export function ThreadComposer({
                 levels={voiceRecorder.levels}
               />
             ) : workspaceScope && !workspaceControlsHidden ? (
-              <WorkspaceAccessMenu
-                scope={workspaceScope}
-                disabled={interactionDisabled || workspaceScopeDisabled}
-                canUseFullAccess={workspaceControls?.can_use_full_access !== false}
-                isHero={isHero}
-                onChange={onWorkspaceScopeChange}
-              />
+              <>
+                <WorkspaceAccessMenu
+                  scope={workspaceScope}
+                  disabled={interactionDisabled || workspaceScopeDisabled}
+                  canUseFullAccess={workspaceControls?.can_use_full_access !== false}
+                  isHero={isHero}
+                  onChange={onWorkspaceScopeChange}
+                />
+                {projectPickerAvailable && !isHero ? (
+                  <WorkspaceProjectPicker
+                    isHero={false}
+                    compact
+                    connected
+                    disabled={interactionDisabled || workspaceScopeDisabled}
+                    scope={workspaceScope}
+                    defaultScope={workspaceDefaultScope}
+                    controls={workspaceControls}
+                    error={workspaceError}
+                    onPickFolder={onPickWorkspaceFolder}
+                    onChange={onWorkspaceScopeChange}
+                  />
+                ) : null}
+              </>
             ) : null}
           </div>
           <div
@@ -2794,6 +2902,8 @@ interface CliAppMentionPaletteProps {
   selectedIndex: number;
   layout: SlashPaletteLayout;
   isHero: boolean;
+  /** Raw `@` token, used to highlight what the user is still typing. */
+  highlightQuery: string;
   onHover: (index: number) => void;
   onChoose: (candidate: MentionCandidate) => void;
 }
@@ -2820,6 +2930,7 @@ function CliAppMentionPalette({
   selectedIndex,
   layout,
   isHero,
+  highlightQuery,
   onHover,
   onChoose,
 }: CliAppMentionPaletteProps) {
@@ -2829,19 +2940,37 @@ function CliAppMentionPalette({
     layout.maxHeight - SLASH_PALETTE_CHROME_PX,
   );
   const listRef = useSelectedOptionScroll(selectedIndex);
-  const groupedCandidates = (["session", "cli", "mcp"] as const)
-    .map((kind) => ({
-      kind,
-      label: kind === "session"
-        ? t("thread.composer.mentions.sessionGroup")
-        : kind === "cli"
-          ? t("thread.composer.mentions.cliGroup")
-          : t("thread.composer.mentions.mcpGroup"),
-      items: candidates
+  const groupedCandidates = (["file", "session", "cli", "mcp"] as const)
+    .map((kind) => {
+      const items = candidates
         .map((candidate, index) => ({ candidate, index }))
-        .filter(({ candidate }) => candidate.kind === kind),
-    }))
+        .filter(({ candidate }) => candidate.kind === kind);
+      // Titles and trails are planned together: a segment only "distinguishes"
+      // a row relative to the other rows being shown.
+      const pathPlan = kind === "file"
+        ? planMentionPaths(candidates.flatMap((candidate) => (
+            candidate.kind === "file"
+              ? [{ path: candidate.name, kind: candidate.file.kind }]
+              : []
+          )))
+        : null;
+      return {
+        kind,
+        label: kind === "file"
+          ? t("thread.composer.mentions.fileGroup")
+          : kind === "session"
+            ? t("thread.composer.mentions.sessionGroup")
+            : kind === "cli"
+            ? t("thread.composer.mentions.cliGroup")
+            : t("thread.composer.mentions.mcpGroup"),
+        breadcrumb: pathPlan?.breadcrumb ?? "",
+        breadcrumbLabel: pathPlan?.breadcrumbLabel ?? "",
+        pathPlan,
+        items,
+      };
+    })
     .filter((group) => group.items.length > 0);
+  const needle = mentionLeafNeedle(highlightQuery);
   return (
     <div
       role="listbox"
@@ -2857,22 +2986,41 @@ function CliAppMentionPalette({
       <div ref={listRef} className="overflow-y-auto" style={{ maxHeight: listMaxHeight }}>
         {groupedCandidates.map((group) => (
           <div key={group.kind} role="group" aria-label={group.label} className="mt-1.5 first:mt-0">
-            <div className="px-2 pb-1 pt-1 text-[12px] font-medium text-muted-foreground/72">
-              {group.label}
+            <div className="flex min-w-0 items-baseline gap-1.5 px-3 pb-1 pt-2 text-[11.5px] font-medium text-muted-foreground/72">
+              <span className="shrink-0">{group.label}</span>
+              {group.breadcrumb ? (
+                <span
+                  title={`@${group.breadcrumb}`}
+                  aria-hidden
+                  className="min-w-0 truncate font-mono text-muted-foreground/58"
+                >
+                  {group.breadcrumbLabel}
+                </span>
+              ) : null}
             </div>
             {group.items.map(({ candidate, index }) => {
               const selected = index === selectedIndex;
               const name = candidate.name;
-              const typeLabel = candidate.kind === "cli"
-                ? t("thread.composer.mentions.cliBadge")
-                : candidate.kind === "mcp"
-                  ? t("thread.composer.mentions.mcpBadge")
-                  : t("thread.composer.mentions.sessionBadge");
-              const ariaDescription = candidate.kind === "cli"
-                ? t("thread.composer.mentions.cliDescription", { name })
-                : candidate.kind === "mcp"
-                  ? t("thread.composer.mentions.mcpDescription", { name })
-                  : t("thread.composer.mentions.sessionDescription", { name });
+              const typeLabel = candidate.kind === "file"
+                ? candidate.file.kind
+                : candidate.kind === "cli"
+                  ? t("thread.composer.mentions.cliBadge")
+                  : candidate.kind === "mcp"
+                    ? t("thread.composer.mentions.mcpBadge")
+                    : t("thread.composer.mentions.sessionBadge");
+              const ariaDescription = candidate.kind === "file"
+                ? `Workspace ${candidate.file.kind}`
+                : candidate.kind === "cli"
+                  ? t("thread.composer.mentions.cliDescription", { name })
+                  : candidate.kind === "mcp"
+                    ? t("thread.composer.mentions.mcpDescription", { name })
+                    : t("thread.composer.mentions.sessionDescription", { name });
+              const pathView = candidate.kind === "file" && group.pathPlan
+                ? group.pathPlan.views.get(name) ?? null
+                : null;
+              // Screen readers get the same discriminating title the eye sees,
+              // plus the untouched full path.
+              const visualLabel = pathView?.title ?? candidate.displayName;
               return (
                 <button
                   key={`${candidate.kind}-${name}`}
@@ -2880,7 +3028,7 @@ function CliAppMentionPalette({
                   role="option"
                   data-palette-index={index}
                   aria-selected={selected}
-                  aria-label={`${candidate.displayName} @${name} ${ariaDescription} ${typeLabel}`}
+                  aria-label={`${visualLabel} @${name} ${ariaDescription} ${typeLabel}`}
                   onMouseEnter={() => onHover(index)}
                   onMouseDown={(e) => {
                     e.preventDefault();
@@ -2888,27 +3036,44 @@ function CliAppMentionPalette({
                   }}
                   className={cn(
                     floatingItemClassName,
-                    "flex min-h-10 w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors",
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+                    pathView?.detail ? "min-h-12" : "min-h-10",
                     selected
                       ? "bg-foreground/[0.055] text-foreground"
                       : "text-foreground/90 hover:bg-foreground/[0.04]",
                   )}
                 >
                   <MentionCandidateLogo candidate={candidate} selected={selected} />
-                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                    <span className="min-w-0 truncate text-[15px] font-medium tracking-normal text-foreground">
-                      {candidate.displayName}
+                  {pathView ? (
+                    <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                      <span className="w-full max-w-full truncate text-[14px] font-semibold leading-tight text-foreground">
+                        <MentionHighlight text={pathView.title} needle={needle} />
+                      </span>
+                      {pathView.detail ? (
+                        <span
+                          title={`@${name}`}
+                          className="w-full max-w-full truncate font-mono text-[11px] leading-tight text-muted-foreground/70"
+                        >
+                          <MentionHighlight text={pathView.detail} needle={needle} />
+                        </span>
+                      ) : null}
                     </span>
-                    <span className="truncate text-[15px] font-normal tracking-normal text-muted-foreground/72">
-                      @{name}
+                  ) : (
+                    <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                      <span className="min-w-0 truncate text-[15px] font-medium tracking-normal text-foreground">
+                        {candidate.displayName}
+                      </span>
+                      <span className="truncate text-[15px] font-normal tracking-normal text-muted-foreground/72">
+                        @{name}
+                      </span>
                     </span>
-                  </span>
-                  {candidate.kind !== "session" ? (
+                  )}
+                  {candidate.kind === "cli" || candidate.kind === "mcp" ? (
                     <span
                       className={cn(
                         "ml-2 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-normal",
                         candidate.kind === "cli"
-                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-300"
+                          ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
                           : "bg-sky-500/10 text-sky-600 dark:text-sky-300",
                       )}
                     >
@@ -2925,6 +3090,23 @@ function CliAppMentionPalette({
   );
 }
 
+/** Emphasise the part of a label the user is still typing. */
+function MentionHighlight({ text, needle }: { text: string; needle: string }) {
+  return (
+    <>
+      {matchMentionSpans(text, needle).map((segment, index) => (
+        segment.matched ? (
+          <span key={`${segment.text}-${index}`} className="font-bold text-primary">
+            {segment.text}
+          </span>
+        ) : (
+          <span key={`${segment.text}-${index}`}>{segment.text}</span>
+        )
+      ))}
+    </>
+  );
+}
+
 function MentionCandidateLogo({
   candidate,
   selected,
@@ -2936,11 +3118,20 @@ function MentionCandidateLogo({
     ? candidate.mention.id
       ? sessionHandleColor(candidate.mention.id)
       : INLINE_TOKEN_HIGHLIGHT_COLOR
-    : candidate.brandColor || INLINE_TOKEN_HIGHLIGHT_COLOR;
-  const rawLogoUrl = candidate.kind === "session" ? null : candidate.logoUrl;
+    : candidate.kind === "file"
+      ? INLINE_TOKEN_HIGHLIGHT_COLOR
+      : candidate.brandColor || INLINE_TOKEN_HIGHLIGHT_COLOR;
+  const rawLogoUrl = candidate.kind === "session" || candidate.kind === "file" ? null : candidate.logoUrl;
   const logoUrls = useMemo(() => logoFallbackUrls(rawLogoUrl), [rawLogoUrl]);
   const { logoUrl, onLogoError, onLogoLoad } = useLogoFallback(logoUrls);
 
+  if (candidate.kind === "file") {
+    return (
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+        {candidate.file.kind === "folder" ? <FolderOpen className="h-4 w-4" aria-hidden /> : <FileText className="h-4 w-4" aria-hidden />}
+      </span>
+    );
+  }
   if (candidate.kind === "session") {
     return (
       <span

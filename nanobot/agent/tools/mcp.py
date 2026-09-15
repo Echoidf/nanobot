@@ -197,6 +197,49 @@ def _sanitize_mcp_tool_name(name: str) -> str:
     return _limit_tool_name(_sanitize_name(name))
 
 
+_URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]+")
+_MCP_FAILURE_DETAIL_LIMIT = 220
+
+
+def _scrub_mcp_failure_text(text: str) -> str:
+    """Redact credentials inside URLs and query secrets in a failure message.
+
+    Tool results are replayed into model context and shown in the chat stream, so
+    a raw transport error (which often embeds the request URL) must never carry a
+    token or password.
+    """
+    scrubbed = _URL_IN_TEXT_RE.sub(lambda match: _redact_url(match.group(0)), text)
+    scrubbed = re.sub(
+        r"([?&](?:[^=&]*(?:api[_-]?key|token|secret|password|bearer)[^=&]*)=)[^&#\s]+",
+        r"\1<redacted>",
+        scrubbed,
+        flags=re.IGNORECASE,
+    )
+    scrubbed = re.sub(
+        r"((?:api[_-]?key|token|secret|password|bearer)(?:[=:]|\s+))[^,\s'\"&]+",
+        r"\1<redacted>",
+        scrubbed,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(scrubbed.split())
+
+
+def _describe_mcp_exception(exc: BaseException) -> str:
+    """Return a compact ``Type: reason`` label for an MCP failure.
+
+    Bare exception classes leave the chat stream with an undiagnosable error row;
+    carrying the first message line lets the UI surface ``Connection refused`` or
+    ``Timeout`` instead of a silent generic failure.
+    """
+    name = type(exc).__name__
+    detail = _scrub_mcp_failure_text(str(exc))
+    if not detail:
+        return name
+    if len(detail) > _MCP_FAILURE_DETAIL_LIMIT:
+        detail = detail[: _MCP_FAILURE_DETAIL_LIMIT - 1].rstrip() + "…"
+    return f"{name}: {detail}"
+
+
 def _is_transient(exc: BaseException) -> bool:
     """Check if an exception looks like a transient connection error."""
     return type(exc).__name__ in _TRANSIENT_EXC_NAMES
@@ -672,7 +715,7 @@ class MCPToolWrapper(_MCPWrapperBase):
                         type(exc).__name__,
                     )
                     return ToolResult.error(
-                        f"(MCP tool call failed after retry: {type(exc).__name__})"
+                        f"(MCP tool call failed after retry: {_describe_mcp_exception(exc)})"
                     )
                 logger.exception(
                     "MCP tool '{}' failed: {}: {}",
@@ -681,7 +724,7 @@ class MCPToolWrapper(_MCPWrapperBase):
                     exc,
                 )
                 return ToolResult.error(
-                    f"(MCP tool call failed: {type(exc).__name__})"
+                    f"(MCP tool call failed: {_describe_mcp_exception(exc)})"
                 )
             else:
                 # Success — extract text and persist any image content as artifacts.
@@ -1328,12 +1371,23 @@ def session_extra(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
     return {"mcp_presets": mcp_presets} if isinstance(mcp_presets, list) and mcp_presets else {}
 
 
+def _active_servers(servers: Mapping[str, MCPServerConfig]) -> dict[str, MCPServerConfig]:
+    """Drop servers that were turned off from the MCP management UI.
+
+    A disabled entry keeps its configuration on disk, so toggling it back on
+    never loses credentials, but it must not spawn a process or register tools.
+    """
+    return {name: cfg for name, cfg in servers.items() if cfg.enabled}
+
+
 def _configured_servers(config: Config) -> dict[str, MCPServerConfig]:
     from nanobot.agent.plugins import agent_plugin_mcp_servers
 
-    return agent_plugin_mcp_servers(
-        config.workspace_path,
-        config.tools.mcp_servers,
+    return _active_servers(
+        agent_plugin_mcp_servers(
+            config.workspace_path,
+            config.tools.mcp_servers,
+        )
     )
 
 

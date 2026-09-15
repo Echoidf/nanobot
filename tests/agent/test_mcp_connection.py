@@ -717,3 +717,78 @@ async def test_concurrent_mcp_reconnect_reuses_fresh_session(
     assert outputs == ["fresh:alpha", "fresh:beta"]
     assert connect_count == 2
     assert closed == ["remote"]
+
+
+@pytest.mark.asyncio
+async def test_configured_servers_drop_soft_disabled_entries(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A turned-off server keeps its config but must never be started."""
+    from nanobot.agent.tools.mcp import _configured_servers, _load_current_servers
+    from nanobot.config.loader import save_config
+    from nanobot.config.schema import Config
+
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    config = Config()
+    config.tools.mcp_servers = {
+        "live": MCPServerConfig(type="stdio", command="echo"),
+        "parked": MCPServerConfig(type="stdio", command="echo", enabled=False),
+    }
+    save_config(config)
+
+    assert set(_configured_servers(config)) == {"live"}
+    assert set(_load_current_servers()) == {"live"}
+
+
+@pytest.mark.asyncio
+async def test_reload_stops_a_server_turned_off_in_the_ui(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Disabling a server must close its process, not just hide the row."""
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    config = load_config()
+    config.tools.mcp_servers["analytics"] = MCPServerConfig(
+        type="stdio",
+        command="mcp-analytics",
+    )
+    save_config(config)
+
+    closed: list[str] = []
+
+    async def _fake_connect(servers, registry):
+        stacks = {}
+        for name in servers:
+            registry.register(_FakeMcpTool(f"mcp_{name}_query"))
+            stack = AsyncExitStack()
+            await stack.__aenter__()
+            stack.push_async_callback(_mark_closed, name)
+            stacks[name] = stack
+        return stacks
+
+    async def _mark_closed(name: str) -> None:
+        closed.append(name)
+
+    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    provider, registry = _make_provider(mcp_servers={})
+
+    await provider.reload()
+    assert registry.has("mcp_analytics_query")
+    assert provider.connected_server_names == {"analytics"}
+
+    config = load_config()
+    config.tools.mcp_servers["analytics"].enabled = False
+    save_config(config)
+
+    result = await provider.reload()
+
+    assert result["ok"] is True
+    assert result["removed"] == ["analytics"]
+    assert provider.connected_server_names == set()
+    assert provider.runtime_status() == {}
+    assert not registry.has("mcp_analytics_query")
+    assert closed == ["analytics"]
+    await provider.aclose()

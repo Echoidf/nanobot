@@ -17,6 +17,7 @@ from typing import Any, cast
 
 from loguru import logger
 
+from nanobot.agent.workbench import AGENT_ID_METADATA_KEY, DEFAULT_AGENT_ID
 from nanobot.config.paths import get_webui_dir
 from nanobot.security.workspace_access import WORKSPACE_SCOPE_METADATA_KEY
 from nanobot.session.history_visibility import is_hidden_history_message
@@ -35,10 +36,11 @@ from nanobot.session.model_selection import (
     model_selection_mode_from_metadata,
 )
 
-_INDEX_VERSION = 8
+_INDEX_VERSION = 9
 _INDEX_FILENAME = ".webui_session_index.json"
 _MODEL_PRESET_FIELD = "model_preset"
 _MODEL_SELECTION_MODE_FIELD = "model_selection_mode"
+_AGENT_ID_FIELD = "agent_id"
 _ROW_SOURCE_FIELD = "_source"
 _SESSION_SOURCE = "session"
 _TRANSCRIPT_SOURCE = "webui_transcript"
@@ -249,6 +251,8 @@ def _public_row(sessions_dir: Path, webui_dir: Path, row: dict[str, Any]) -> dic
         "title": row.get("title", ""),
         "preview": row.get("preview", ""),
         _MODEL_PRESET_FIELD: row.get(_MODEL_PRESET_FIELD),
+        _MODEL_SELECTION_MODE_FIELD: row.get(_MODEL_SELECTION_MODE_FIELD),
+        _AGENT_ID_FIELD: row.get(_AGENT_ID_FIELD),
         _WORKSPACE_SCOPE_PRESENT_FIELD: row.get(_WORKSPACE_SCOPE_PRESENT_FIELD, False),
         _WORKSPACE_SCOPE_VALUE_FIELD: row.get(_WORKSPACE_SCOPE_VALUE_FIELD),
         "path": str(path),
@@ -261,6 +265,13 @@ def indexed_workspace_scope(row: dict[str, Any]) -> tuple[bool, object]:
         row.get(_WORKSPACE_SCOPE_PRESENT_FIELD) is True,
         cast(object, row.get(_WORKSPACE_SCOPE_VALUE_FIELD)),
     )
+
+
+def _agent_id_from_metadata(metadata: object) -> str:
+    if not isinstance(metadata, dict):
+        return DEFAULT_AGENT_ID
+    raw = cast(dict[str, Any], metadata).get(AGENT_ID_METADATA_KEY)
+    return raw.strip() if isinstance(raw, str) and raw.strip() else DEFAULT_AGENT_ID
 
 
 def _indexed_workspace_scope_fields(metadata: object) -> dict[str, object]:
@@ -490,6 +501,7 @@ def _indexed_row_for_session(session: Session, path: Path, webui_dir: Path) -> d
         "preview": _preview_from_messages(session.messages),
         _MODEL_PRESET_FIELD: model_preset_from_metadata(session.metadata),
         _MODEL_SELECTION_MODE_FIELD: model_selection_mode_from_metadata(session.metadata),
+        _AGENT_ID_FIELD: _agent_id_from_metadata(session.metadata),
         **_indexed_workspace_scope_fields(session.metadata),
         _ROW_SOURCE_FIELD: _SESSION_SOURCE,
         "file": path.name,
@@ -606,6 +618,8 @@ def _scan_transcript_row(
         "title": "",
         "preview": preview or fallback_preview,
         _MODEL_PRESET_FIELD: None,
+        _MODEL_SELECTION_MODE_FIELD: "auto",
+        _AGENT_ID_FIELD: DEFAULT_AGENT_ID,
         **_indexed_workspace_scope_fields({}),
         _ROW_SOURCE_FIELD: _TRANSCRIPT_SOURCE,
         "file": stem,
@@ -693,6 +707,7 @@ def _scan_session_row(
                 "preview": preview or fallback_preview,
                 _MODEL_PRESET_FIELD: model_preset_from_metadata(metadata),
                 _MODEL_SELECTION_MODE_FIELD: model_selection_mode_from_metadata(metadata),
+                _AGENT_ID_FIELD: _agent_id_from_metadata(metadata),
                 **_indexed_workspace_scope_fields(metadata),
                 _ROW_SOURCE_FIELD: _SESSION_SOURCE,
                 "file": path.name,

@@ -24,10 +24,20 @@ from websockets.datastructures import Headers
 from websockets.http11 import Request as WsRequest
 from websockets.http11 import Response
 
+from nanobot.agent.workbench import (
+    AGENT_ID_METADATA_KEY,
+    DEFAULT_AGENT_ID,
+    AgentProfileError,
+    agent_profile_by_id,
+    agents_payload,
+    persist_agent_metadata,
+    update_agent_profiles,
+    validate_agent_profile,
+)
 from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
-from nanobot.security.workspace_access import WorkspaceScope
+from nanobot.security.workspace_access import WorkspaceScope, WorkspaceScopeError
 from nanobot.session.manager import SessionManager
 from nanobot.session.session_handles import (
     SessionHandleResolver,
@@ -107,6 +117,7 @@ from nanobot.webui.session_list_index import (
     indexed_workspace_scope,
     list_webui_sessions,
 )
+from nanobot.webui.settings_system import runtime_tools_payload
 from nanobot.webui.sidebar_state import (
     read_webui_sidebar_state,
     write_webui_sidebar_state,
@@ -130,6 +141,7 @@ from nanobot.webui.skills_marketplace import (
 )
 from nanobot.webui.thread_disk import delete_webui_thread
 from nanobot.webui.transcript import build_webui_thread_response
+from nanobot.webui.workspace_files import WorkspaceFileListingError, workspace_files_payload
 from nanobot.webui.workspaces import WebUIWorkspaceController
 
 _SLOW_WEBUI_HTTP_LOG_MS = 1_000
@@ -150,6 +162,9 @@ _WEBUI_MUTATION_PATHS = {
     "sidebar.update": "/api/webui/sidebar-state/update",
     "workspace.pick_folder": "/api/workspaces/pick-folder",
     "settings.agent.update": "/api/settings/update",
+    "agents.create": "/api/webui/agents/create",
+    "agents.update": "/api/webui/agents/update",
+    "agents.delete": "/api/webui/agents/delete",
     "settings.model_configuration.create": "/api/settings/model-configurations/create",
     "settings.model_configuration.update": "/api/settings/model-configurations/update",
     "settings.model_configuration.delete": "/api/settings/model-configurations/delete",
@@ -157,6 +172,7 @@ _WEBUI_MUTATION_PATHS = {
     "settings.model_call_order.update": "/api/settings/model-call-order/update",
     "settings.provider.update": "/api/settings/provider/update",
     "settings.provider.create": "/api/settings/provider/create",
+    "settings.provider.delete": "/api/settings/provider/delete",
     "settings.provider.oauth_login": "/api/settings/provider/oauth-login",
     "settings.provider.oauth_complete": "/api/settings/provider/oauth-login/complete",
     "settings.provider.oauth_logout": "/api/settings/provider/oauth-logout",
@@ -182,6 +198,7 @@ _WEBUI_MUTATION_PATHS = {
     "settings.mcp.test": "/api/settings/mcp-presets/test",
     "settings.mcp.reconnect": "/api/settings/mcp-presets/reconnect",
     "settings.mcp.custom": "/api/settings/mcp-presets/custom",
+    "settings.mcp.enabled": "/api/settings/mcp-presets/enabled",
     "settings.mcp.import": "/api/settings/mcp-presets/import",
     "settings.mcp.import_cursor": "/api/settings/mcp-presets/import-cursor",
     "settings.mcp.tools": "/api/settings/mcp-presets/tools",
@@ -327,6 +344,7 @@ class GatewayHTTPHandler:
         mcp_runtime_status: Callable[[], Mapping[str, str]] | None = None,
         mcp_reload: Callable[[], Awaitable[dict[str, Any]]] | None = None,
         skill_state_action: Callable[[set[str]], None] | None = None,
+        tool_definitions: Callable[[], list[dict[str, Any]]] | None = None,
         log: Any = logger,
     ) -> None:
         self.config = config
@@ -344,6 +362,7 @@ class GatewayHTTPHandler:
             disabled_skills if disabled_skills is not None else set()
         )
         self.skill_state_action = skill_state_action
+        self._tool_definitions = tool_definitions
         self._skill_install_lock = asyncio.Lock()
         self._folder_picker_lock = asyncio.Lock()
         self.cron_service = cron_service
@@ -375,7 +394,15 @@ class GatewayHTTPHandler:
         )
 
     def workspace_controls_available(self, connection: Any) -> bool:
-        return self._runtime_surface == "native" or _is_localhost(connection)
+        if self._runtime_surface == "native" or _is_localhost(connection):
+            return True
+        try:
+            return bool(
+                self.settings.config.load().tools.webui_allow_remote_workspace_controls
+            )
+        except Exception:
+            self._log.exception("failed to load remote workspace controls policy")
+            return False
 
     def workspace_folder_picker_available(
         self,
@@ -464,6 +491,9 @@ class GatewayHTTPHandler:
             "/api/webui/skills/update",
             "/api/webui/skills/delete",
             "/api/webui/sidebar-state/update",
+            "/api/webui/agents/create",
+            "/api/webui/agents/update",
+            "/api/webui/agents/delete",
             "/api/workspaces/pick-folder",
         }
 
@@ -617,8 +647,10 @@ class GatewayHTTPHandler:
                     self.runtime_model_name,
                     self.settings.config.path,
                 ),
+                "site_title": self._resolve_site_title(),
                 "runtime_surface": self._runtime_surface,
                 "runtime_capabilities": self._capabilities,
+                "agents": self._agents_payload(),
             }
             return _http_json_response(payload, extra_headers=_NO_STORE_HEADERS)
 
@@ -651,8 +683,10 @@ class GatewayHTTPHandler:
                 self.runtime_model_name,
                 self.settings.config.path,
             ),
+            "site_title": self._resolve_site_title(),
             "runtime_surface": self._runtime_surface,
             "runtime_capabilities": self._capabilities,
+            "agents": self._agents_payload(),
         }
         if api_token is not None:
             payload["api_token"] = api_token
@@ -671,6 +705,12 @@ class GatewayHTTPHandler:
         scheme = "wss" if secure else "ws"
         expected_path = _normalize_config_path(self.config.path)
         return f"{scheme}://{host}{expected_path}"
+
+    def _resolve_site_title(self) -> str:
+        try:
+            return self.settings.config.load().gateway.site_title.strip() or "NanoDesk"
+        except Exception:
+            return "NanoDesk"
 
     def _mcp_oauth_redirect_uri(self, request: WsRequest) -> str:
         """Derive the browser callback from the same public origin as WebSocket bootstrap."""
@@ -1120,6 +1160,14 @@ class GatewayHTTPHandler:
             return await self._handle_workspace_folder_picker(connection, request)
         if got == "/api/workspaces":
             return self._handle_workspaces(connection, request)
+        if got == "/api/webui/workspace/files":
+            return self._handle_webui_workspace_files(connection, request)
+        if got == "/api/webui/agents":
+            return self._handle_webui_agents(request)
+        if got in {"/api/webui/agents/create", "/api/webui/agents/update", "/api/webui/agents/delete"}:
+            return self._handle_webui_agent_mutation(request, got.rsplit("/", 1)[-1])
+        if got == "/api/settings/runtime-tools":
+            return self._handle_settings_runtime_tools(request)
         if got == "/api/webui/skills/search":
             return await self._handle_webui_skills_search(request)
         if got == "/api/webui/skills/trending":
@@ -1146,6 +1194,114 @@ class GatewayHTTPHandler:
         if got == "/api/webui/sidebar-state/update":
             return self._handle_webui_sidebar_state_update(request)
         return None
+
+    def _current_tool_definitions(self) -> list[dict[str, Any]]:
+        if self._tool_definitions is None:
+            return []
+        return self._tool_definitions()
+
+    def _agents_payload(self) -> dict[str, Any]:
+        return agents_payload(
+            config=self.settings.config.load(),
+            workspace=self.skills_workspace_path,
+            disabled_skills=self.disabled_skills,
+            tool_definitions=self._current_tool_definitions(),
+        )
+
+    def agent_id_for_new_chat(self, envelope: dict[str, Any]) -> str:
+        raw_agent_id = envelope.get(AGENT_ID_METADATA_KEY)
+        if raw_agent_id is None:
+            return DEFAULT_AGENT_ID
+        if not isinstance(raw_agent_id, str) or not raw_agent_id.strip():
+            raise AgentProfileError("invalid agent_id", status=400)
+        profile = agent_profile_by_id(self.settings.config.load(), raw_agent_id)
+        validate_agent_profile(
+            profile,
+            workspace=self.skills_workspace_path,
+            disabled_skills=self.disabled_skills,
+            tool_names={
+                schema.get("function", {}).get("name")
+                if isinstance(schema.get("function"), dict)
+                else schema.get("name")
+                for schema in self._current_tool_definitions()
+            } - {None},
+        )
+        return profile.id
+
+    def persist_agent_id(self, chat_id: str, agent_id: str | None) -> None:
+        if self.session_manager is None:
+            return
+        session = self.session_manager.get_or_create(f"websocket:{chat_id}")
+        session.metadata["webui"] = True
+        persist_agent_metadata(session.metadata, agent_id)
+        self.session_manager.save(session)
+
+    def _handle_webui_agents(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        return _http_json_response(self._agents_payload())
+
+    def _handle_webui_agent_mutation(self, request: WsRequest, action: str) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        payload = _mutation_payload(request) or {}
+        try:
+            self.settings.config.update(lambda config: update_agent_profiles(config, payload, action))
+        except AgentProfileError as exc:
+            return _http_error(exc.status, exc.message)
+        except Exception as exc:
+            return _http_error(400, str(exc))
+        return _http_json_response(self._agents_payload())
+
+    def _handle_settings_runtime_tools(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        config = self.settings.config.load()
+        tool_definitions = self._current_tool_definitions()
+        return _http_json_response(runtime_tools_payload(config, tool_definitions))
+
+    def _handle_webui_workspace_files(self, connection: Any, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        query = _parse_query(request.path)
+        raw_scope = _query_first(query, "scope")
+        session_key: str | None = None
+        if raw_scope:
+            decoded_scope = _decode_api_key(raw_scope)
+            if decoded_scope is None or not _is_websocket_channel_session_key(decoded_scope):
+                return _http_error(400, "invalid scope")
+            session_key = decoded_scope
+
+        project_path = _query_first(query, "project_path")
+        access_mode = _query_first(query, "access_mode")
+        envelope: dict[str, Any] = {}
+        if project_path or access_mode:
+            requested: dict[str, Any] = {}
+            if project_path:
+                requested["project_path"] = project_path
+            if access_mode:
+                requested["access_mode"] = access_mode
+            envelope["workspace_scope"] = requested
+
+        if session_key is None and "workspace_scope" not in envelope:
+            return _http_error(400, "missing scope")
+
+        try:
+            scope = self.workspaces.scope_from_envelope(
+                envelope,
+                session_key=session_key,
+                controls_available=self.workspace_controls_available(connection),
+            )
+            payload = workspace_files_payload(
+                _query_first(query, "dir"),
+                query=_query_first(query, "q"),
+                scope=scope,
+            )
+        except WorkspaceScopeError as exc:
+            return _http_error(exc.status, exc.message)
+        except WorkspaceFileListingError as exc:
+            return _http_error(exc.status, exc.message)
+        return _http_json_response(payload)
 
     def _handle_commands(self, request: WsRequest) -> Response:
         if not self.check_api_token(request):
@@ -1244,11 +1400,13 @@ class GatewayHTTPHandler:
         connection: Any,
         request: WsRequest,
     ) -> Response:
-        """List importable skills from a local directory for trusted local clients."""
+        """List importable skills from a directory on the gateway host.
+
+        Paths are resolved on the gateway machine, so authenticated remote
+        WebUI clients can import skills that already exist there.
+        """
         if not self.check_api_token(request):
             return _http_error(401, "Unauthorized")
-        if not _is_local_browser_request(connection, request.headers):
-            return _http_error(403, "remote local-skill access is disabled")
         source_path = (
             _query_first(_parse_query(request.path), "path") or DEFAULT_LOCAL_SKILLS_PATH
         )
@@ -1266,11 +1424,9 @@ class GatewayHTTPHandler:
         connection: Any,
         request: WsRequest,
     ) -> Response:
-        """Create workspace symlinks for selected skills from a local directory."""
+        """Create workspace symlinks for selected skills from a gateway-local directory."""
         if not self.check_api_token(request):
             return _http_error(401, "Unauthorized")
-        if not _is_local_browser_request(connection, request.headers):
-            return _http_error(403, "remote local-skill import is disabled")
         if self._skill_install_lock.locked():
             return _http_error(409, "another skill installation is already in progress")
         payload = _mutation_payload(request) or {}

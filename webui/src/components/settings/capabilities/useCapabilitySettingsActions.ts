@@ -17,13 +17,13 @@ import {
   updateTranscriptionSettings,
   updateWebSearchSettings,
 } from "@/lib/api";
-import type { NanobotClient } from "@/lib/nanobot-client";
+import type { NanodeskClient } from "@/lib/nanodesk-client";
 import type { SettingsPayload, WebSearchSettingsUpdate } from "@/lib/types";
 
 interface CapabilitySettingsActionsOptions {
   state: CapabilitySettingsState;
   settings: SettingsPayload | null;
-  client: NanobotClient;
+  client: NanodeskClient;
   t: TFunction;
   applyPayload: ApplySettingsPayload;
   maybeRestartHostEngine: MaybeRestartHostEngine;

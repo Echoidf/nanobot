@@ -21,10 +21,13 @@ from nanobot.bus.events import (
 )
 from nanobot.runtime_context import (
     RUNTIME_CONTEXT_END,
+    RUNTIME_CONTEXT_HISTORY_META,
     RUNTIME_CONTEXT_MESSAGE_META,
     RUNTIME_CONTEXT_TAG,
     RuntimeContextBlock,
     append_runtime_context,
+    detach_runtime_context,
+    reattach_runtime_context,
 )
 from nanobot.security.workspace_access import WorkspaceScopeResolver
 from nanobot.session.keys import last_channel_from_metadata
@@ -40,11 +43,15 @@ from nanobot.utils.prompt_templates import render_template
 
 def session_extra(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return persisted kwargs for turn-attached capabilities."""
-    return (
+    extra = (
         cli_app_utils.session_extra(metadata)
         | mcp_tools.session_extra(metadata)
         | session_tools.session_extra(metadata)
     )
+    refs = metadata.get("path_refs") if isinstance(metadata, Mapping) else None
+    if isinstance(refs, list) and refs:
+        extra["path_refs"] = refs[:20]
+    return extra
 
 
 async def handle_runtime_control(state: Any, msg: InboundMessage, tools: ToolRegistry) -> bool:
@@ -89,7 +96,19 @@ class ContextBuilder:
         self.workspace = workspace
         self.timezone = timezone
         self.memory = MemoryStore(workspace)
-        self.skills = SkillsLoader(workspace, disabled_skills=set(disabled_skills) if disabled_skills else None)
+        self._disabled_skills = set(disabled_skills) if disabled_skills else None
+        self.skills = SkillsLoader(workspace, disabled_skills=self._disabled_skills)
+
+    def skills_for_workspace(self, workspace: Path | None) -> SkillsLoader:
+        """Return a Skill loader rooted at the effective workspace for this turn."""
+        root = (workspace or self.workspace).expanduser().resolve(strict=False)
+        if root == self.skills.workspace:
+            return self.skills
+        return SkillsLoader(
+            root,
+            disabled_skills=self._disabled_skills,
+            default_workspace=self.workspace,
+        )
 
     def build_system_prompt(
         self,
@@ -104,6 +123,7 @@ class ContextBuilder:
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
         root = workspace or self.workspace
+        skills = self.skills_for_workspace(root)
         parts = [self._get_identity(channel=channel, workspace=root)]
 
         bootstrap = self._load_bootstrap_files(root)
@@ -117,13 +137,13 @@ class ContextBuilder:
             if memory and not self._is_template_content(memory, "memory/MEMORY.md"):
                 parts.append(f"# Memory\n\n## Long-term Memory\n{memory}")
 
-        active_skills = self.skills.get_always_skills()
+        active_skills = skills.get_always_skills()
         if active_skills:
-            active_content = self.skills.load_skills_for_context(active_skills)
+            active_content = skills.load_skills_for_context(active_skills)
             if active_content:
                 parts.append(f"# Active Skills\n\n{active_content}")
 
-        skills_summary = self.skills.build_skills_summary(exclude=set(active_skills))
+        skills_summary = skills.build_skills_summary(exclude=set(active_skills))
         if skills_summary:
             parts.append(render_template("agent/skills_section.md", skills_summary=skills_summary))
 
@@ -218,6 +238,52 @@ class ContextBuilder:
 
         return _to_blocks(left) + _to_blocks(right)
 
+    def _clean_user_content_for_model(self, content: Any, skills: SkillsLoader) -> Any:
+        """Remove explicit skill tokens from user-visible text blocks only."""
+        if isinstance(content, str):
+            return skills.clean_explicit_skill_references(content)
+        if isinstance(content, list):
+            cleaned: list[dict[str, Any]] = []
+            for item in cast(list[Any], content):
+                if not isinstance(item, dict):
+                    cleaned.append({"type": "text", "text": skills.clean_explicit_skill_references(str(item))})
+                    continue
+                block = dict(cast(dict[str, Any], item))
+                if block.get("type") == "text" and isinstance(block.get("text"), str):
+                    block["text"] = skills.clean_explicit_skill_references(cast(str, block["text"]))
+                cleaned.append(block)
+            return cleaned
+        return content
+
+    def _sanitize_history_for_model(
+        self,
+        history: Sequence[dict[str, Any]],
+        skills: SkillsLoader,
+    ) -> list[dict[str, Any]]:
+        """Clean replayed user history so old sessions do not reintroduce skill tokens."""
+        sanitized: list[dict[str, Any]] = []
+        for message in history:
+            if message.get("role") != "user":
+                sanitized.append(message)
+                continue
+            current = dict(message)
+            marker = current.get(RUNTIME_CONTEXT_HISTORY_META)
+            if isinstance(marker, Mapping):
+                detached = detach_runtime_context(current.get("content"), marker)
+                if detached is not None:
+                    visible, sources, blocks = detached
+                    cleaned_visible = self._clean_user_content_for_model(visible, skills)
+                    current["content"], current[RUNTIME_CONTEXT_HISTORY_META] = reattach_runtime_context(
+                        cleaned_visible,
+                        sources,
+                        blocks,
+                    )
+                    sanitized.append(current)
+                    continue
+            current["content"] = self._clean_user_content_for_model(current.get("content"), skills)
+            sanitized.append(current)
+        return sanitized
+
     def _load_bootstrap_files(self, workspace: Path | None = None) -> str:
         """Load project instructions plus the agent's global profile files."""
         parts: list[str] = []
@@ -273,6 +339,7 @@ class ContextBuilder:
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         root = workspace or self.workspace
+        skills = self.skills_for_workspace(root)
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
@@ -286,13 +353,14 @@ class ContextBuilder:
                     unified_session=unified_session,
                 ),
             },
-            *history,
+            *self._sanitize_history_for_model(history, skills),
         ]
         current = self.build_current_message(
             current_message,
             media=media,
             current_role=current_role,
             runtime_context_blocks=runtime_context_blocks,
+            workspace=root,
         )
         if messages[-1].get("role") == current_role:
             last = dict(messages[-1])
@@ -317,15 +385,19 @@ class ContextBuilder:
         media: list[str] | None = None,
         current_role: str = "user",
         runtime_context_blocks: Sequence[RuntimeContextBlock] | None = None,
+        workspace: Path | None = None,
     ) -> dict[str, Any]:
         """Build only the fresh turn message without merging it into history."""
-        content = self.build_user_content(current_message, image_paths=media)
+        message_text = current_message
         blocks: list[RuntimeContextBlock] = []
         if current_role == "user":
+            skills = self.skills_for_workspace(workspace)
+            message_text = skills.clean_explicit_skill_references(current_message)
             blocks.extend(runtime_context_blocks or ())
-            skill_context = self.skills.build_explicit_skill_runtime_context(current_message)
+            skill_context = skills.build_explicit_skill_runtime_context(current_message)
             if skill_context is not None and skill_context not in blocks:
                 blocks.append(skill_context)
+        content = self.build_user_content(message_text, image_paths=media)
         merged, runtime_context_meta = append_runtime_context(content, blocks)
         current: dict[str, Any] = {"role": current_role, "content": merged}
         if current_role == "user" and runtime_context_meta is not None:

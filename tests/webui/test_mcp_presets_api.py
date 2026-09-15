@@ -749,3 +749,211 @@ def test_normalize_mcp_mentions_uses_explicit_gateway_config(
     )
 
     assert payload == [{"name": "gateway-docs", "display_name": "Gateway docs"}]
+
+
+def test_enabled_toggle_keeps_config_and_reports_disabled_row(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The list switch parks a server without deleting its configuration."""
+    _use_config(tmp_path, monkeypatch)
+    custom_mcp_action(
+        "custom",
+        {
+            "name": ["postgres-lzh"],
+            "transport": ["stdio"],
+            "command": ["npx"],
+            "args": ["-y\n@modelcontextprotocol/server-postgres"],
+            "timeout_ms": ["60000"],
+        },
+    )
+
+    disabled = custom_mcp_action("enabled", {"name": ["postgres-lzh"], "enabled": ["false"]})
+    row = next(item for item in disabled["presets"] if item["name"] == "postgres-lzh")
+    assert row["status"] == "disabled"
+    assert row["server_enabled"] is False
+    assert row["form"]["enabled"] is False
+    assert load_config().tools.mcp_servers["postgres-lzh"].command == "npx"
+
+    enabled = custom_mcp_action("enabled", {"name": ["postgres-lzh"], "enabled": ["true"]})
+    row = next(item for item in enabled["presets"] if item["name"] == "postgres-lzh")
+    assert row["status"] == "configured"
+    assert row["server_enabled"] is True
+
+
+def test_disabled_servers_cannot_be_attached_to_a_turn(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A turned-off server is not live, so its mention must be dropped."""
+    _use_config(tmp_path, monkeypatch)
+    custom_mcp_action(
+        "custom",
+        {"name": ["quiet-docs"], "transport": ["stdio"], "command": ["npx"]},
+    )
+    custom_mcp_action("enabled", {"name": ["quiet-docs"], "enabled": ["false"]})
+
+    assert normalize_mcp_preset_mentions([{"name": "quiet-docs"}]) == []
+
+
+def test_custom_server_accepts_line_args_env_and_ms_timeout(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The modal posts line-oriented fields and a millisecond timeout."""
+    _use_config(tmp_path, monkeypatch)
+
+    payload = custom_mcp_action(
+        "custom",
+        {
+            "name": ["postgres-lzh"],
+            "transport": ["stdio"],
+            "command": ["npx"],
+            "args": ["-y\n@modelcontextprotocol/server-postgres\npostgresql://localhost:5432/app"],
+            "env": ["TZ=Asia/Shanghai\nDB_PASSWORD=super-secret"],
+            "cwd": ["/tmp"],
+            "timeout_ms": ["60000"],
+            "description": ["Local analytics DB"],
+            "docs_url": ["https://github.com/modelcontextprotocol/servers"],
+        },
+    )
+
+    row = next(item for item in payload["presets"] if item["name"] == "postgres-lzh")
+    assert row["form"]["args"] == [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://localhost:5432/app",
+    ]
+    assert row["form"]["tool_timeout"] == 60
+    assert row["form"]["description"] == "Local analytics DB"
+    assert row["form"]["docs_url"] == "https://github.com/modelcontextprotocol/servers"
+    config = load_config()
+    assert config.tools.mcp_servers["postgres-lzh"].tool_timeout == 60
+    assert config.tools.mcp_servers["postgres-lzh"].cwd == "/tmp"
+    assert config.tools.mcp_servers["postgres-lzh"].env == {
+        "TZ": "Asia/Shanghai",
+        "DB_PASSWORD": "super-secret",
+    }
+
+
+def test_server_form_redacts_secrets_and_resaves_without_losing_them(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Opening the modal is safe, and saving it unchanged keeps every credential."""
+    _use_config(tmp_path, monkeypatch)
+    custom_mcp_action(
+        "custom",
+        {
+            "name": ["internal-docs"],
+            "transport": ["stdio"],
+            "command": ["node"],
+            "args": ["server.js\n--token\ntok_live_value"],
+            "env": ["API_KEY=config_key_value\nTZ=UTC"],
+        },
+    )
+
+    listed = mcp_presets_payload()
+    row = next(item for item in listed["presets"] if item["name"] == "internal-docs")
+    form = row["form"]
+    assert form["env"]["API_KEY"] == "••••••••"
+    assert form["env"]["TZ"] == "UTC"
+    assert form["args"] == ["server.js", "--token", "••••••••"]
+    assert "tok_live_value" not in str(form)
+    assert "config_key_value" not in str(listed)
+
+    saved = custom_mcp_action(
+        "custom",
+        {
+            "name": ["internal-docs"],
+            "transport": ["stdio"],
+            "command": ["node"],
+            "args": ["\n".join(form["args"])],
+            "env": ["API_KEY=••••••••\nTZ=Asia/Shanghai"],
+        },
+    )
+    server = load_config().tools.mcp_servers["internal-docs"]
+    assert server.env == {"API_KEY": "config_key_value", "TZ": "Asia/Shanghai"}
+    assert server.args == ["server.js", "--token", "tok_live_value"]
+    assert saved["last_action"]["ok"] is True
+
+
+def test_redacted_url_without_stored_match_is_rejected(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A masked URL that cannot be resolved back to stored config is an error."""
+    _use_config(tmp_path, monkeypatch)
+
+    with pytest.raises(McpPresetError, match="masked secret"):
+        custom_mcp_action(
+            "custom",
+            {
+                "name": ["remote-docs"],
+                "transport": ["streamableHttp"],
+                "url": ["https://mcp.example.com/mcp?token=••••••••"],
+            },
+        )
+
+
+def test_untouched_redacted_remote_url_keeps_the_stored_endpoint(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Editing only the timeout must not rewrite a token-bearing URL."""
+    _use_config(tmp_path, monkeypatch)
+    custom_mcp_action(
+        "custom",
+        {
+            "name": ["remote-docs"],
+            "transport": ["streamableHttp"],
+            "url": ["https://mcp.example.com/mcp?token=remote_token_value"],
+            "timeout_ms": ["30000"],
+        },
+    )
+
+    form = next(
+        row for row in mcp_presets_payload()["presets"] if row["name"] == "remote-docs"
+    )["form"]
+    assert form["url"] == "https://mcp.example.com/mcp?token=••••••••"
+
+    custom_mcp_action(
+        "custom",
+        {
+            "name": ["remote-docs"],
+            "transport": ["streamableHttp"],
+            "url": [form["url"]],
+            "timeout_ms": ["120000"],
+        },
+    )
+
+    server = load_config().tools.mcp_servers["remote-docs"]
+    assert server.url == "https://mcp.example.com/mcp?token=remote_token_value"
+    assert server.tool_timeout == 120
+
+
+def test_saving_without_the_enabled_field_keeps_a_parked_server_parked(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Apps page posts no ``enabled`` key; it must not silently restart a server."""
+    _use_config(tmp_path, monkeypatch)
+    custom_mcp_action(
+        "custom",
+        {"name": ["quiet-docs"], "transport": ["stdio"], "command": ["npx"]},
+    )
+    custom_mcp_action("enabled", {"name": ["quiet-docs"], "enabled": ["false"]})
+
+    custom_mcp_action(
+        "custom",
+        {
+            "name": ["quiet-docs"],
+            "transport": ["stdio"],
+            "command": ["node"],
+            "args": ["server.js"],
+        },
+    )
+
+    server = load_config().tools.mcp_servers["quiet-docs"]
+    assert server.enabled is False
+    assert server.command == "node"

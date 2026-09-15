@@ -1,4 +1,5 @@
 import type {
+  AgentsPayload,
   ApiServicePayload,
   AutomationsPayload,
   AutomationUpdatePayload,
@@ -8,12 +9,13 @@ import type {
   ChatSummary,
   CliAppsPayload,
   FilePreviewPayload,
+  WorkspaceFilesPayload,
   ImageGenerationSettingsUpdate,
   LocalSkillsPayload,
   McpPresetsPayload,
   McpOAuthFlowPayload,
   MarketplaceProvider,
-  NanobotFeaturesPayload,
+  NanodeskFeaturesPayload,
   ModelConfigurationCreate,
   ModelConfigurationUpdate,
   NetworkSafetySettingsUpdate,
@@ -23,6 +25,7 @@ import type {
   ProviderOAuthCompletionResult,
   ProviderOAuthLoginResult,
   ProviderSettingsUpdate,
+  RuntimeToolsPayload,
   SessionDeleteResult,
   SessionHandle,
   SessionAutomationsPayload,
@@ -122,7 +125,7 @@ async function request<T>(
     throw new ApiError(
       res.status,
       isHtml
-        ? "Gateway returned WebUI HTML instead of JSON. Restart nanobot gateway and try again."
+        ? "Gateway returned WebUI HTML instead of JSON. Restart nanodesk gateway and try again."
         : "Gateway returned a non-JSON response.",
     );
   }
@@ -196,6 +199,7 @@ export async function listSessions(
     model_selection_mode?: "auto" | "manual";
     run_started_at?: number | null;
     workspace_scope?: WorkspaceScopePayload | null;
+    agent_id?: string | null;
     handle?: SessionHandle | null;
   };
   const body = await request<{ sessions: Row[] }>(
@@ -218,6 +222,7 @@ export async function listSessions(
         ?? (s.model_preset ? "manual" : "auto"),
       runStartedAt: s.run_started_at ?? null,
       workspaceScope: s.workspace_scope ?? null,
+      agentId: s.agent_id ?? null,
       handle,
     };
   });
@@ -255,6 +260,31 @@ export async function fetchWebuiThread(
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return (await res.json()) as WebuiThreadPersistedPayload;
+}
+
+export async function fetchWorkspaceFiles(
+  token: string,
+  options: {
+    scope?: string | null;
+    projectPath?: string | null;
+    accessMode?: string | null;
+    dir?: string;
+    query?: string;
+    base?: string;
+  } = {},
+): Promise<WorkspaceFilesPayload> {
+  const query = new URLSearchParams();
+  if (options.scope) query.set("scope", options.scope);
+  if (options.projectPath) query.set("project_path", options.projectPath);
+  if (options.accessMode) query.set("access_mode", options.accessMode);
+  if (options.dir) query.set("dir", options.dir);
+  if (options.query) query.set("q", options.query);
+  return request<WorkspaceFilesPayload>(
+    `${options.base ?? ""}/api/webui/workspace/files?${query}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
 }
 
 export async function fetchFilePreview(
@@ -497,6 +527,18 @@ export async function fetchSettingsUsage(
   );
 }
 
+export async function fetchRuntimeTools(
+  token: string,
+  base: string = "",
+): Promise<RuntimeToolsPayload> {
+  return request<RuntimeToolsPayload>(
+    `${base}/api/settings/runtime-tools`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
 export interface VersionCheckResult {
   updateAvailable: {
     currentVersion: string;
@@ -515,6 +557,38 @@ export async function checkVersion(
     undefined,
     10_000,
   );
+}
+
+export async function fetchAgents(
+  token: string,
+  base: string = "",
+): Promise<AgentsPayload> {
+  return request<AgentsPayload>(
+    `${base}/api/webui/agents`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export type AgentProfileUpdate = {
+  id: string;
+  name: string;
+  icon?: string | null;
+  description: string;
+  status: string;
+  model_preset?: string | null;
+  system_prompt?: string | null;
+  skills: string[];
+  tools: string[];
+};
+
+export async function mutateAgentProfile(
+  transport: WebUIMutationTransport,
+  action: "create" | "update" | "delete",
+  profile: AgentProfileUpdate,
+): Promise<AgentsPayload> {
+  return mutation<AgentsPayload>(transport, `agents.${action}`, { profile });
 }
 
 export async function fetchWorkspaces(
@@ -553,12 +627,12 @@ export async function fetchInstalledCliApps(
   );
 }
 
-export async function fetchNanobotFeatures(
+export async function fetchNanodeskFeatures(
   token: string,
   base: string = "",
-): Promise<NanobotFeaturesPayload> {
-  return request<NanobotFeaturesPayload>(
-    `${base}/api/settings/nanobot-features`,
+): Promise<NanodeskFeaturesPayload> {
+  return request<NanodeskFeaturesPayload>(
+    `${base}/api/settings/nanodesk-features`,
     token,
     undefined,
     API_READ_TIMEOUT_MS,
@@ -592,12 +666,12 @@ export async function stopApiService(
   return mutation<ApiServicePayload>(transport, "settings.api_service.stop");
 }
 
-export async function enableNanobotFeature(
+export async function enableNanodeskFeature(
   transport: WebUIMutationTransport,
   name: string,
   options: { instanceId?: string } = {},
-): Promise<NanobotFeaturesPayload> {
-  return mutation<NanobotFeaturesPayload>(
+): Promise<NanodeskFeaturesPayload> {
+  return mutation<NanodeskFeaturesPayload>(
     transport,
     "settings.feature.enable",
     { name, ...(options.instanceId ? { instance_id: options.instanceId } : {}) },
@@ -605,12 +679,12 @@ export async function enableNanobotFeature(
   );
 }
 
-export async function disableNanobotFeature(
+export async function disableNanodeskFeature(
   transport: WebUIMutationTransport,
   name: string,
   options: { instanceId?: string } = {},
-): Promise<NanobotFeaturesPayload> {
-  return mutation<NanobotFeaturesPayload>(
+): Promise<NanodeskFeaturesPayload> {
+  return mutation<NanodeskFeaturesPayload>(
     transport,
     "settings.feature.disable",
     { name, ...(options.instanceId ? { instance_id: options.instanceId } : {}) },
@@ -838,6 +912,38 @@ export async function saveCustomMcpServer(
   );
 }
 
+/**
+ * Soft-toggle one MCP server.
+ *
+ * Unlike ``disable`` (which only exists for Agent Plugins), this keeps the
+ * server's configuration on disk and just stops the runtime from starting it,
+ * which is what the management list switch is for.
+ */
+export async function setMcpServerEnabled(
+  transport: WebUIMutationTransport,
+  name: string,
+  enabled: boolean,
+): Promise<McpPresetsPayload> {
+  return mutation<McpPresetsPayload>(transport, "settings.mcp.enabled", {
+    name,
+    enabled: enabled ? "true" : "false",
+  });
+}
+
+export async function removeMcpServer(
+  transport: WebUIMutationTransport,
+  name: string,
+): Promise<McpPresetsPayload> {
+  return runMcpPresetAction(transport, "remove", name);
+}
+
+export async function testMcpPreset(
+  transport: WebUIMutationTransport,
+  name: string,
+): Promise<McpPresetsPayload> {
+  return runMcpPresetAction(transport, "test", name);
+}
+
 export async function importMcpConfig(
   transport: WebUIMutationTransport,
   config: string,
@@ -1021,6 +1127,13 @@ export async function createProviderSettings(
   update: ProviderCreationUpdate,
 ): Promise<SettingsPayload> {
   return mutation<SettingsPayload>(transport, "settings.provider.create", { ...update });
+}
+
+export async function deleteProviderSettings(
+  transport: WebUIMutationTransport,
+  provider: string,
+): Promise<SettingsPayload> {
+  return mutation<SettingsPayload>(transport, "settings.provider.delete", { provider });
 }
 
 export async function loginProviderOAuth(

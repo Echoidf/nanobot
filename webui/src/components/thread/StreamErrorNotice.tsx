@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { StreamError } from "@/lib/nanobot-client";
+import type { StreamError } from "@/lib/nanodesk-client";
 
 interface StreamErrorNoticeProps {
   error: StreamError;
@@ -65,6 +65,11 @@ function resolveCopy(
       return {
         title: t("errors.workspaceScopeRejected.title"),
         body: t("errors.workspaceScopeRejected.body"),
+      };
+    case "agent_rejected":
+      return {
+        title: "Agent unavailable",
+        body: error.reason || "Choose another agent or fix its configured skills and tools.",
       };
     case "turn_rejected":
       return {

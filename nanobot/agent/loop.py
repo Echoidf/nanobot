@@ -43,12 +43,21 @@ from nanobot.agent.turn_delivery import (
 )
 from nanobot.agent.turn_delivery import TurnRoute as TurnRoute
 from nanobot.agent.turn_hooks import AgentTurnHookSpec, build_agent_turn_hook
+from nanobot.agent.workbench import (
+    AgentProfileError,
+    AgentRuntimeProfile,
+    agent_id_from_metadata,
+    agent_profile_by_id,
+    agent_prompt_block,
+    restricted_tools_for_agent,
+    validate_agent_profile,
+)
 from nanobot.bus.events import INBOUND_META_USER_SHELL, InboundMessage, OutboundMessage
 from nanobot.bus.outbound_events import StreamedResponseEvent
 from nanobot.bus.queue import MessageBus
 from nanobot.bus.runtime_events import RuntimeEventBus
 from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
-from nanobot.config.schema import AgentDefaults, ModelPresetConfig
+from nanobot.config.schema import AgentDefaults, Config, ModelPresetConfig
 from nanobot.providers.base import LLMProvider, ProviderConversationState
 from nanobot.providers.factory import ProviderSnapshot
 from nanobot.runtime_context import (
@@ -65,6 +74,7 @@ from nanobot.security.workspace_access import (
     bind_workspace_scope,
     reset_workspace_scope,
 )
+from nanobot.security.workspace_policy import WorkspaceBoundaryError, resolve_allowed_path
 from nanobot.session import turn_continuation
 from nanobot.session.automation_turns import automation_history_overrides
 from nanobot.session.goal_state import (
@@ -158,6 +168,7 @@ class TurnContext:
     hook_factories: list[AgentTurnHookFactory] = field(default_factory=list)
     turn_scopes: list[AbstractContextManager[Any]] = field(default_factory=list)
     tools: ToolRegistry | None = None
+    agent_profile: AgentRuntimeProfile | None = None
 
     turn_wall_started_at: float = field(default_factory=time.time)
     visible_run_started_at: float | None = None
@@ -295,11 +306,13 @@ class AgentLoop:
         restart_mode: str = "auto",
         local_trigger_store: LocalTriggerStore | None = None,
         idle_compact_check_interval_seconds: int = 0,
+        config: Config | None = None,
     ):
         from nanobot.config.schema import ToolsConfig
 
         _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
+        self.config = config or Config()
         self.bus = bus
         if turn_delivery_factory is not None:
             if turn_delivery_factory.bus is not bus:
@@ -528,6 +541,7 @@ class AgentLoop:
             provider_snapshot_loader=provider_snapshot_loader,
             preset_snapshot_loader=preset_snapshot_loader,
             tool_registry=tool_registry,
+            config=config,
             **extra,
         )
 
@@ -555,6 +569,12 @@ class AgentLoop:
         """Resolve the immutable runtime selected by one session."""
         mode = model_selection_mode_from_metadata(session.metadata)
         if mode == "auto":
+            profile = agent_profile_by_id(
+                self.config,
+                agent_id_from_metadata(session.metadata),
+            )
+            if profile.model_preset and profile.model_preset != "default":
+                return self.runtime_resolver.resolve_preset(profile.model_preset)
             return self.llm_runtime()
         name = model_preset_from_metadata(session.metadata)
         if name is None:
@@ -732,6 +752,13 @@ class AgentLoop:
             text_override, automation_extra = automation_history_overrides(msg.metadata)
             if text_override is not None:
                 text = text_override
+            elif isinstance(content_value, str):
+                scope = self.workspace_scopes.for_turn(
+                    channel=msg.channel,
+                    message_metadata=msg.metadata,
+                    session_metadata=session.metadata,
+                )
+                text = self.context.skills_for_workspace(scope.project_path).clean_explicit_skill_references(text)
             extra.update(automation_extra)
             text, runtime_context_meta = append_runtime_context(
                 text,
@@ -749,7 +776,7 @@ class AgentLoop:
         """Build the initial message list for the LLM turn."""
         assert ctx.session is not None
         scope = self.workspace_scopes.for_message(ctx.msg, ctx.session.metadata)
-        return self.context.build_messages(
+        messages = self.context.build_messages(
             history=ctx.history,
             current_message=ctx.msg.content,
             media=ctx.msg.media if ctx.kind is TurnKind.USER and ctx.msg.media else None,
@@ -762,6 +789,12 @@ class AgentLoop:
             session_key=ctx.session.key,
             unified_session=self._unified_session,
         )
+        if ctx.agent_profile is not None:
+            messages[0]["content"] = (
+                f"{messages[0].get('content', '')}\n\n---\n\n"
+                + agent_prompt_block(ctx.agent_profile, scope.project_path)
+            )
+        return messages
 
     def _request_context_for_turn(self, ctx: TurnContext) -> RequestContext:
         assert ctx.session is not None
@@ -805,7 +838,7 @@ class AgentLoop:
         ]
         blocks = runtime_context_blocks_from_metadata(request.metadata)
         blocks.extend(await resolve_runtime_context(providers, request))
-        skill_context = self.context.skills.build_explicit_skill_runtime_context(
+        skill_context = self.context.skills_for_workspace(request.workspace).build_explicit_skill_runtime_context(
             request.original_user_text or ""
         )
         if skill_context is not None and skill_context not in blocks:
@@ -1023,23 +1056,20 @@ class AgentLoop:
                         image_paths,
                     )
                     image_paths = image_paths or None
-                user_content = self.context.build_user_content(
-                    content,
-                    image_paths=image_paths,
-                )
-                row: dict[str, Any] = {"role": "user", "content": user_content}
                 metadata_value = cast(object, pending_msg.metadata)
                 metadata = (
                     pending_msg.metadata
                     if isinstance(metadata_value, dict)
                     else {}
                 )
+                cleaned_content = content
                 if pending_msg.is_user_input:
                     scope = self.workspace_scopes.for_turn(
                         channel=pending_msg.channel,
                         message_metadata=metadata,
                         session_metadata=session.metadata if session is not None else None,
                     )
+                    cleaned_content = self.context.skills_for_workspace(scope.project_path).clean_explicit_skill_references(content)
                     pending_request = RequestContext(
                         channel=pending_msg.channel,
                         chat_id=pending_msg.chat_id,
@@ -1057,6 +1087,11 @@ class AgentLoop:
                         pending_request,
                         effective_tools,
                     )
+                    user_content = self.context.build_user_content(
+                        cleaned_content,
+                        image_paths=image_paths,
+                    )
+                    row: dict[str, Any] = {"role": "user", "content": user_content}
                     row["content"], runtime_marker = append_runtime_context(
                         user_content,
                         blocks,
@@ -1065,6 +1100,12 @@ class AgentLoop:
                         row["_meta"] = {
                             RUNTIME_CONTEXT_MESSAGE_META: runtime_marker,
                         }
+                else:
+                    user_content = self.context.build_user_content(
+                        cleaned_content,
+                        image_paths=image_paths,
+                    )
+                    row = {"role": "user", "content": user_content}
                 if (
                     pending_msg.sender_id == "subagent"
                     and metadata.get("injected_event") == "subagent_result"
@@ -1632,7 +1673,14 @@ class AgentLoop:
         await self._run_turn_stage(ctx, "compact", self._compact_session)
         if await self._run_turn_stage(ctx, "command", self._dispatch_command):
             return ctx.outbound
-        await self._run_turn_stage(ctx, "build", self._build_turn)
+        try:
+            await self._run_turn_stage(ctx, "build", self._build_turn)
+        except AgentProfileError as exc:
+            ctx.final_content = exc.message
+            ctx.stop_reason = "error"
+            ctx.all_messages = []
+            await self._run_turn_stage(ctx, "respond", self._prepare_outbound)
+            return ctx.outbound
         await self._run_turn_stage(ctx, "run", self._run_turn)
         await self._run_turn_stage(ctx, "save", self._persist_turn)
         await self._run_turn_stage(ctx, "respond", self._prepare_outbound)
@@ -1717,6 +1765,49 @@ class AgentLoop:
             ctx.msg = dataclasses.replace(msg, content=new_content, media=image_paths)
             msg = ctx.msg
 
+        if ctx.kind is TurnKind.USER:
+            refs = msg.metadata.get("path_refs") if isinstance(msg.metadata, Mapping) else None
+            if isinstance(refs, list):
+                scope = self.workspace_scopes.for_message(msg, {})
+                injected: list[str] = []
+                for ref in refs[:20]:
+                    if not isinstance(ref, Mapping):
+                        continue
+                    raw_path = ref.get("path")
+                    kind = ref.get("kind")
+                    if not isinstance(raw_path, str) or kind not in {"file", "folder"}:
+                        continue
+                    try:
+                        resolved = resolve_allowed_path(
+                            raw_path,
+                            workspace=scope.project_path,
+                            allowed_root=scope.project_path if scope.restrict_to_workspace else None,
+                            strict=True,
+                        )
+                        if kind == "folder" and resolved.is_dir():
+                            names = sorted(
+                                p.name + ("/" if p.is_dir() else "")
+                                for p in resolved.iterdir()
+                            )[:100]
+                            injected.append(f"[Directory: {raw_path}]\n" + "\n".join(names))
+                        elif kind == "file" and resolved.is_file():
+                            size = resolved.stat().st_size
+                            if size < 16 * 1024:
+                                text = resolved.read_text(encoding="utf-8")
+                                injected.append(f"[File: {raw_path}]\n{text}")
+                            else:
+                                injected.append(
+                                    f"[Reference: {raw_path}] (use read_file to inspect)"
+                                )
+                    except (OSError, UnicodeDecodeError, WorkspaceBoundaryError, FileNotFoundError):
+                        injected.append(f"[Reference unavailable: {raw_path}]")
+                if injected:
+                    ctx.msg = dataclasses.replace(
+                        msg,
+                        content=msg.content + "\n\n" + "\n\n".join(injected),
+                    )
+                    msg = ctx.msg
+
         if ctx.session is None:
             if msg.require_existing_session:
                 ctx.session = self.sessions.get_cached(ctx.session_key)
@@ -1727,6 +1818,15 @@ class AgentLoop:
         session = ctx.session
         ctx.ephemeral = ctx.ephemeral or not session.policy.persist
         tools = ctx.tools or self.tools
+        profile = agent_profile_by_id(self.config, agent_id_from_metadata(session.metadata))
+        validate_agent_profile(
+            profile,
+            workspace=self.workspace,
+            disabled_skills=set(self.context.skills.disabled_skills),
+            tool_names=set(tools.tool_names),
+        )
+        tools = restricted_tools_for_agent(profile, tools)
+        ctx.agent_profile = profile
         if session.policy.disabled_tools:
             restricted = ToolRegistry()
             for name in tools.tool_names:
@@ -1879,6 +1979,7 @@ class AgentLoop:
                 ctx.msg.content,
                 media=ctx.msg.media if ctx.kind is TurnKind.USER and ctx.msg.media else None,
                 runtime_context_blocks=ctx.runtime_context_blocks,
+                workspace=ctx.request_context.workspace if ctx.request_context is not None else None,
             )
             task_id = ctx.msg.metadata.get("subagent_task_id") if is_subagent else None
             already_staged = False

@@ -84,6 +84,7 @@ from nanobot.webui.http_utils import (
     query_first as _query_first,
 )
 from nanobot.webui.mcp_presets_api import normalize_mcp_preset_mentions
+from nanobot.webui.workspace_files import normalize_path_refs
 from nanobot.webui.metadata import (
     WEBSOCKET_TURN_OWNER_METADATA_KEY,
     WEBUI_SYSTEM_COMMAND_TURN_PREFIX,
@@ -187,7 +188,7 @@ class WebSocketConfig(Base):
       nanobot and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
       blocking ``urllib`` or synchronous ``httpx`` from inside a coroutine.
     - ``token_issue_secret``: If non-empty, token requests must send ``Authorization: Bearer <secret>`` or
-      ``X-Nanobot-Auth: <secret>``.
+      the bootstrap auth header (``X-Nanodesk-Auth``, or the legacy ``X-Nanobot-Auth``).
     - ``public_ws_url``: Optional public WebSocket endpoint returned by WebUI bootstrap instead of
       deriving one from proxy request headers. Its path must match ``path``.
     - ``websocket_requires_token``: If True, the handshake must include a valid token (static or issued and not expired).
@@ -615,6 +616,7 @@ class WebSocketChannel(BaseChannel):
         cli_apps: list[dict[str, Any]],
         mcp_presets: list[dict[str, Any]],
         session_mentions: list[SessionMention],
+        path_refs: list[dict[str, str]],
     ) -> None:
         """Project one accepted user message to the other clients on the chat.
 
@@ -641,6 +643,8 @@ class WebSocketChannel(BaseChannel):
             body["mcp_presets"] = mcp_presets
         if session_mentions:
             body["session_mentions"] = session_mentions
+        if path_refs:
+            body["path_refs"] = path_refs
         active_turn_id = websocket_turn_id(chat_id)
         if active_turn_id is not None:
             body["active_turn_id"] = active_turn_id
@@ -902,7 +906,21 @@ class WebSocketChannel(BaseChannel):
             )
             if scope is None:
                 return
+            try:
+                agent_id = self._http_router.agent_id_for_new_chat(envelope)
+            except Exception as exc:
+                detail = "agent_rejected"
+                reason = str(exc)
+                await self._send_event(
+                    connection,
+                    "error",
+                    detail=detail,
+                    reason=reason,
+                    chat_id=new_id,
+                )
+                return
             self._workspaces.persist_scope(new_id, scope)
+            self._http_router.persist_agent_id(new_id, agent_id)
             self._attach(connection, new_id)
             await self._send_event(
                 connection,
@@ -916,6 +934,7 @@ class WebSocketChannel(BaseChannel):
                 chat_id=new_id,
                 scope="metadata",
                 workspace_scope=scope.payload(),
+                agent_id=agent_id,
             )
             await self._hydrate_after_subscribe(new_id)
             return
@@ -1200,6 +1219,9 @@ class WebSocketChannel(BaseChannel):
             )
             if mcp_presets:
                 metadata["mcp_presets"] = mcp_presets
+            path_refs = normalize_path_refs(envelope.get("path_refs")) if trusted_webui else []
+            if path_refs:
+                metadata["path_refs"] = path_refs
             session_mentions: list[SessionMention] = []
             if (
                 trusted_webui
@@ -1237,6 +1259,7 @@ class WebSocketChannel(BaseChannel):
                         cli_apps=cli_apps or None,
                         mcp_presets=mcp_presets or None,
                         session_mentions=session_mentions or None,
+                        path_refs=path_refs or None,
                     )
                 if trusted_webui:
                     context_blocks: list[RuntimeContextBlock] = []
@@ -1284,6 +1307,7 @@ class WebSocketChannel(BaseChannel):
                     cli_apps=cli_apps,
                     mcp_presets=mcp_presets,
                     session_mentions=session_mentions,
+                    path_refs=path_refs,
                 )
             if is_webui and turn_id:
                 active_turn_id = websocket_turn_id(cid)

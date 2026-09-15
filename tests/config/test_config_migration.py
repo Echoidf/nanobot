@@ -282,6 +282,31 @@ def test_load_config_defaults_remote_package_install_to_disabled(tmp_path) -> No
     assert config.tools.webui_allow_remote_package_install is False
 
 
+def test_load_config_defaults_remote_workspace_control_to_disabled(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"tools": {}}), encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.tools.webui_allow_remote_workspace_controls is False
+
+
+def test_load_config_accepts_remote_workspace_control_aliases(tmp_path) -> None:
+    camel_path = tmp_path / "camel.json"
+    camel_path.write_text(
+        json.dumps({"tools": {"webuiAllowRemoteWorkspaceControls": True}}),
+        encoding="utf-8",
+    )
+    snake_path = tmp_path / "snake.json"
+    snake_path.write_text(
+        json.dumps({"tools": {"webui_allow_remote_workspace_controls": True}}),
+        encoding="utf-8",
+    )
+
+    assert load_config(camel_path).tools.webui_allow_remote_workspace_controls is True
+    assert load_config(snake_path).tools.webui_allow_remote_workspace_controls is True
+
+
 def test_load_config_accepts_remote_package_install_aliases(tmp_path) -> None:
     camel_path = tmp_path / "camel.json"
     camel_path.write_text(

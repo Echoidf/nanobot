@@ -142,8 +142,8 @@ class AgentDefaults(Base):
     reasoning_effort: str | None = None  # low / medium / high / xhigh / max / adaptive / none — LLM thinking effort; None preserves the provider default
     timezone: str = "UTC"  # Effective IANA timezone, e.g. "Asia/Shanghai"
     timezone_mode: Literal["auto", "manual"] = "auto"
-    bot_name: str = "nanobot"  # Display name shown in CLI prompts (e.g. "{name} is thinking...")
-    bot_icon: str = "🐈"  # Short icon (emoji or text) shown next to the bot name in CLI; "" to omit
+    bot_name: str = "NanoDesk"  # Default agent display name (WebUI Agent page, CLI prompts, e.g. "{name} is thinking...")
+    bot_icon: str = "/brand/nanodesk_favicon.svg"  # Agent icon: emoji/text (CLI + WebUI) or a WebUI image path; "" to omit
     unified_session: bool = False  # Share one session across all channels (single-user multi-device)
     disabled_skills: list[str] = Field(default_factory=list)  # Skill names to exclude from loading (e.g. ["summarize", "skill-creator"])
     session_ttl_minutes: int = Field(
@@ -193,10 +193,25 @@ class AgentDefaults(Base):
         return value
 
 
+class AgentProfileConfig(Base):
+    """One user-facing agent profile for Agent Workbench sessions."""
+
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    name: str
+    icon: str | None = None
+    description: str = ""
+    status: Literal["active", "draft", "disabled"] = "active"
+    model_preset: str | None = None
+    system_prompt: str | None = None
+    skills: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+
+
 class AgentsConfig(Base):
     """Agent configuration."""
 
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
+    profiles: list[AgentProfileConfig] = Field(default_factory=list)
 
 
 class ProviderConfig(Base):
@@ -367,6 +382,10 @@ class GatewayConfig(Base):
     port: int = 18790
     restart_mode: Literal["auto", "exec", "spawn", "exit"] = "auto"
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    site_title: str = Field(
+        default="NanoDesk",
+        validation_alias=AliasChoices("siteTitle", "site_title"),
+    )  # configurable browser-tab and sidebar brand title
 
 
 class MCPServerConfig(Base):
@@ -382,6 +401,12 @@ class MCPServerConfig(Base):
     headers: dict[str, str] = Field(default_factory=dict)  # HTTP/SSE: custom headers
     tool_timeout: int = 30  # seconds before a tool call is cancelled
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # Only register these tools; accepts raw MCP names or wrapped mcp_<server>_<tool> names; ["*"] = all capabilities (tools, resources, prompts); any restriction = only listed tools, no resources/prompts
+    enabled: bool = True  # soft toggle: False keeps the entry in config without starting a process
+    description: str = ""  # free-text note shown in the MCP Server management UI
+    docs_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("docsUrl", "docs_url"),
+    )  # optional link to the server's documentation, surfaced in the WebUI
 
 
 def _lazy_default(module_path: str, class_name: str) -> Any:
@@ -425,6 +450,13 @@ class ToolsConfig(Base):
             "webui_allow_remote_package_install",
         ),
     )  # allow non-local WebUI clients to install optional packages and agent skills
+    webui_allow_remote_workspace_controls: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "webuiAllowRemoteWorkspaceControls",
+            "webui_allow_remote_workspace_controls",
+        ),
+    )  # allow non-local WebUI clients to change workspace path and access mode
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking (e.g. ["100.64.0.0/10"] for Tailscale)
 
@@ -477,6 +509,16 @@ class Config(BaseSettings):
         for fallback in self.agents.defaults.fallback_models:
             if isinstance(fallback, str) and fallback not in self.model_presets:
                 raise ValueError(f"fallback_models entry {fallback!r} not found in model_presets")
+        seen_profile_ids: set[str] = set()
+        for profile in self.agents.profiles:
+            if profile.id in seen_profile_ids:
+                raise ValueError(f"duplicate agents.profiles id {profile.id!r}")
+            seen_profile_ids.add(profile.id)
+            profile_name = profile.model_preset
+            if profile_name and profile_name != "default" and profile_name not in self.model_presets:
+                raise ValueError(
+                    f"agents.profiles[{profile.id!r}].model_preset {profile_name!r} not found in model_presets"
+                )
         return self
 
     def resolve_default_preset(self) -> ModelPresetConfig:

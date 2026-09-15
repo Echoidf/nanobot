@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from nanobot.cli.stream import StreamRenderer, ThinkingSpinner
+from nanobot.cli.stream import StreamRenderer, ThinkingSpinner, terminal_icon
 from nanobot.config.schema import AgentDefaults, Config
 
 
 def test_bot_name_and_icon_defaults_preserve_current_branding() -> None:
-    """Default values keep the existing 'nanobot' name and cat icon."""
+    """Default values keep the NanoDesk name and brand tab mark icon."""
     defaults = AgentDefaults()
 
-    assert defaults.bot_name == "nanobot"
-    assert defaults.bot_icon == "🐈"
+    assert defaults.bot_name == "NanoDesk"
+    assert defaults.bot_icon == "/brand/nanodesk_favicon.svg"
 
 
 def test_bot_name_and_icon_can_be_overridden_via_config() -> None:
@@ -57,10 +57,36 @@ def test_stream_renderer_empty_icon_omits_leading_space() -> None:
     """An empty bot_icon yields a header that is just the bot name, no leading space."""
     renderer = StreamRenderer(show_spinner=False, bot_name="mybot", bot_icon="")
 
-    # Replicate the header construction used in on_delta to assert the contract.
-    header = (
-        f"{renderer._bot_icon} {renderer._bot_name}"
-        if renderer._bot_icon
-        else renderer._bot_name
-    )
+    # Replicate the header construction used in ensure_header to assert the contract.
+    icon = terminal_icon(renderer._bot_icon)
+    header = f"{icon} {renderer._bot_name}" if icon else renderer._bot_name
     assert header == "mybot"
+
+
+def test_terminal_icon_keeps_emoji_and_text_icons() -> None:
+    """Short emoji/text icons stay printable in the terminal."""
+    assert terminal_icon("🤖") == "🤖"
+    assert terminal_icon("✦") == "✦"
+    assert terminal_icon("  🐈 ") == "🐈"
+    assert terminal_icon("") == ""
+
+
+def test_terminal_icon_hides_webui_image_assets() -> None:
+    """Brand icons are image references; a terminal must never print the path."""
+    assert terminal_icon("/brand/nanodesk_favicon.svg") == ""
+    assert terminal_icon("./assets/mark.png") == ""
+    assert terminal_icon("https://cdn.example/icon.webp") == ""
+    assert terminal_icon("assets/Mark.SVG?v=2") == ""
+
+
+def test_stream_renderer_header_falls_back_to_name_for_image_icon() -> None:
+    """The default brand icon yields a bare 'NanoDesk' CLI header."""
+    renderer = StreamRenderer(
+        show_spinner=False,
+        bot_name="NanoDesk",
+        bot_icon="/brand/nanodesk_favicon.svg",
+    )
+
+    icon = terminal_icon(renderer._bot_icon)
+    header = f"{icon} {renderer._bot_name}" if icon else renderer._bot_name
+    assert header == "NanoDesk"

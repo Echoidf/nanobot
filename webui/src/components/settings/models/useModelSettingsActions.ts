@@ -20,6 +20,7 @@ import {
   createModelConfiguration,
   createProviderSettings,
   deleteModelConfiguration,
+  deleteProviderSettings,
   loginProviderOAuth,
   logoutProviderOAuth,
   migrateModelConfigurations,
@@ -27,7 +28,7 @@ import {
   updateModelConfiguration,
   updateProviderSettings,
 } from "@/lib/api";
-import type { NanobotClient } from "@/lib/nanobot-client";
+import type { NanodeskClient } from "@/lib/nanodesk-client";
 import type {
   ProviderOAuthAuthorizationRequired,
   ProviderOAuthCompletionResult,
@@ -52,7 +53,7 @@ function isProviderOAuthPending(
 interface ModelSettingsActionsOptions {
   state: ModelSettingsState;
   settings: SettingsPayload | null;
-  client: NanobotClient;
+  client: NanodeskClient;
   t: TFunction;
   applyPayload: ApplySettingsPayload;
   maybeRestartHostEngine: MaybeRestartHostEngine;
@@ -97,6 +98,7 @@ export function useModelSettingsActions({
     providerOAuthCompleting,
     providerOAuthFlowRef,
     providerOAuthResponse,
+    providerPendingDelete,
     providerSaving,
     saving,
     setEditingProviderKeys,
@@ -115,6 +117,7 @@ export function useModelSettingsActions({
     setProviderOAuthDialogError,
     setProviderOAuthFlow,
     setProviderOAuthResponse,
+    setProviderPendingDelete,
     setProviderSaving,
     setSaving,
     setVisibleProviderKeys,
@@ -370,6 +373,42 @@ export function useModelSettingsActions({
     }
   };
 
+  const handleDeleteProvider = async () => {
+    if (!providerPendingDelete || providerSaving) return;
+    const providerName = providerPendingDelete.name;
+    setProviderSaving(providerName);
+    try {
+      const payload = await deleteProviderSettings(client, providerName);
+      applyPayload(payload);
+      if (payload.requires_restart) {
+        setPendingRestartSections((prev) => ({ ...prev, image: true }));
+      }
+      await maybeRestartHostEngine(payload);
+      setExpandedProvider(null);
+      setProviderForms((prev) => {
+        const next = { ...prev };
+        delete next[providerName];
+        return next;
+      });
+      setVisibleProviderKeys((prev) => {
+        const next = { ...prev };
+        delete next[providerName];
+        return next;
+      });
+      setEditingProviderKeys((prev) => {
+        const next = { ...prev };
+        delete next[providerName];
+        return next;
+      });
+      setProviderPendingDelete(null);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setProviderSaving(null);
+    }
+  };
+
   const saveProvider = async (providerName: string) => {
     if (providerSaving) return;
     const provider = settings?.providers.find((item) => item.name === providerName);
@@ -597,6 +636,7 @@ export function useModelSettingsActions({
     completeProviderOAuthResponse,
     createCustomProvider,
     handleDeleteModelConfiguration,
+    handleDeleteProvider,
     handleMigrateModelConfigurations,
     handleToggleProvider,
     resetProviderDraft,

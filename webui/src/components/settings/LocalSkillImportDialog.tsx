@@ -63,7 +63,7 @@ export function LocalSkillImportDialog({
         reason instanceof Error
           ? reason.message
           : t("settings.skills.localImportLoadFailed", {
-              defaultValue: "Could not scan the local skills directory.",
+              defaultValue: "Could not scan the gateway skills directory.",
             }),
       );
     } finally {
@@ -139,7 +139,7 @@ export function LocalSkillImportDialog({
           <DialogDescription>
             {t("settings.skills.localImportDescription", {
               defaultValue:
-                "Select existing skills to link into this workspace. Source files are not copied.",
+                "Select existing skills on the gateway machine to link into this workspace. Source files are not copied.",
             })}
           </DialogDescription>
         </DialogHeader>
@@ -147,7 +147,9 @@ export function LocalSkillImportDialog({
         <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-1">
           <div className="space-y-1.5">
             <label htmlFor="local-skills-path" className="text-[12px] font-medium text-foreground">
-              {t("settings.skills.localImportPath", { defaultValue: "Skills directory" })}
+              {t("settings.skills.localImportPath", {
+                defaultValue: "Skills directory (gateway path)",
+              })}
             </label>
             <div className="flex gap-2">
               <Input

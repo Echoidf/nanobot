@@ -113,6 +113,72 @@ async def test_llm_error_not_appended_to_session_messages():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_text",
+    [
+        "Error calling LLM: Connection error",
+        "The `reasoning_content` in the thinking mode must be passed back to the API.",
+    ],
+)
+async def test_runner_retries_recoverable_model_errors_and_reports_status(error_text: str):
+    from nanobot.agent.runner import AgentRunner
+
+    provider = MagicMock(spec=LLMProvider)
+    provider.chat_with_retry = AsyncMock(side_effect=[
+        LLMResponse(content=error_text, finish_reason="error", usage={}),
+        LLMResponse(content="recovered", finish_reason="stop", usage={}),
+    ])
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+    retry_wait = AsyncMock()
+
+    result = await AgentRunner().run(make_run_spec(
+        provider,
+        initial_messages=[{"role": "user", "content": "hello"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=2,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        retry_wait_callback=retry_wait,
+    ))
+
+    assert result.final_content == "recovered"
+    assert provider.chat_with_retry.await_count == 2
+    retry_wait.assert_awaited_once()
+    assert "retrying (1/5)" in retry_wait.await_args.args[0]
+    assert error_text not in str(result.messages)
+
+
+@pytest.mark.asyncio
+async def test_runner_stops_after_five_model_error_retries():
+    from nanobot.agent.runner import AgentRunner
+
+    error_text = "Error calling LLM: Connection error"
+    provider = MagicMock(spec=LLMProvider)
+    provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(content=error_text, finish_reason="error", usage={})
+    )
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+    retry_wait = AsyncMock()
+
+    result = await AgentRunner().run(make_run_spec(
+        provider,
+        initial_messages=[{"role": "user", "content": "hello"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=2,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        retry_wait_callback=retry_wait,
+    ))
+
+    assert result.final_content == error_text
+    assert provider.chat_with_retry.await_count == 6
+    assert retry_wait.await_count == 5
+    assert "retrying (5/5)" in retry_wait.await_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_llm_arrearage_error_surfaces_clear_message():
     """Arrearage errors yield a clear user-facing message, not a raw dump (#3006)."""
     from nanobot.agent.runner import _ARREARAGE_ERROR_MESSAGE, AgentRunner

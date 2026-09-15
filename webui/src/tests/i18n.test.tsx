@@ -145,14 +145,14 @@ const LOCALIZED_SETTINGS_COPY_KEYS = [
   "settings.skills.marketplaceInstall",
   "settings.skills.marketplaceNoTrend",
   "settings.skills.marketplaceTrendLabel",
-  "settings.nanobotFeatures.disable",
-  "settings.nanobotFeatures.ready",
-  "settings.nanobotFeatures.missingDependency",
-  "settings.nanobotFeatures.installConfirmTitle",
-  "settings.nanobotFeatures.installConfirmDescription",
-  "settings.nanobotFeatures.installConfirmAction",
-  "settings.nanobotFeatures.channelDisabled",
-  "settings.nanobotFeatures.notEnabled",
+  "settings.nanodeskFeatures.disable",
+  "settings.nanodeskFeatures.ready",
+  "settings.nanodeskFeatures.missingDependency",
+  "settings.nanodeskFeatures.installConfirmTitle",
+  "settings.nanodeskFeatures.installConfirmDescription",
+  "settings.nanodeskFeatures.installConfirmAction",
+  "settings.nanodeskFeatures.channelDisabled",
+  "settings.nanodeskFeatures.notEnabled",
   "settings.sections.about",
   "settings.rows.theme",
   "settings.rows.language",
@@ -248,6 +248,40 @@ const LOCALIZED_CHANNEL_SHELL_KEYS = [
   "settings.channels.validation.unsupported",
   "settings.channels.validationFailed",
 ];
+const LOCALIZED_AGENT_WORKBENCH_KEYS = [
+  "agents.workbench.title",
+  "agents.workbench.eyebrow",
+  "agents.workbench.subtitle",
+  "agents.workbench.refresh",
+  "agents.workbench.listTitle",
+  "agents.workbench.empty",
+  "agents.workbench.noDescription",
+  "agents.sections.basic",
+  "agents.sections.basicHint",
+  "agents.sections.runtime",
+  "agents.sections.prompt",
+  "agents.sections.capabilities",
+  "agents.profile.defaultDescription",
+  "agents.skills.empty",
+  "agents.tools.empty",
+  "agents.summary.title",
+  "agents.recentChats.title",
+  "agents.newChat",
+  "agents.status.ready",
+  "agents.status.needsAttention",
+  "agents.status.disabled",
+  "agents.noProfile",
+  "agents.actions.create",
+  "agents.fields.name",
+  "agents.fields.description",
+  "agents.fields.default",
+  "agents.fields.status",
+  "agents.fields.modelPreset",
+  "agents.fields.selectSkills",
+  "agents.fields.searchSkills",
+  "agents.dialog.createTitle",
+  "agents.dialog.createDescription",
+];
 const LOCALIZED_NEW_SURFACE_KEYS = [
   "chat.activity.running",
   "chat.activity.complete",
@@ -286,6 +320,7 @@ const LOCALIZED_NEW_SURFACE_KEYS = [
   "workbench.detachPane",
   "workbench.composerAria",
   "thread.promptNavigator.railAria",
+  "thread.composer.mentions.fileGroup",
   "thread.composer.mentions.cliTitle",
   "thread.composer.mentions.mcpTitle",
   "message.openLink",
@@ -296,9 +331,9 @@ const LOCALIZED_NEW_SURFACE_KEYS = [
 ];
 const INDEX_HTML = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 const PREBOOT_SCRIPT = INDEX_HTML.match(
-  /<script>\s*(\(function \(\) \{\s*var localeKey = "nanobot\.locale";[\s\S]*?\}\)\(\);)\s*<\/script>/,
+  /<script>\s*(\(function \(\) \{\s*var localeKey = "nanodesk\.locale";[\s\S]*?\}\)\(\);)\s*<\/script>/,
 )?.[1];
-const BOOT_COPY_MARKUP = '<span data-boot-copy>Loading nanobot…</span>';
+const BOOT_COPY_MARKUP = '<span data-boot-copy>Loading nanodesk…</span>';
 
 function runPrebootLocale(storedLocale: string) {
   if (!PREBOOT_SCRIPT) throw new Error("Could not find the preboot locale script in index.html");
@@ -429,7 +464,7 @@ describe("webui i18n", () => {
     await waitFor(() => {
       expect(document.documentElement.lang).toBe("zh-CN");
     });
-    expect(localStorage.getItem("nanobot.locale")).toBe("zh-CN");
+    expect(localStorage.getItem("nanodesk.locale")).toBe("zh-CN");
     expect(screen.getByPlaceholderText("输入消息…")).toBeInTheDocument();
   });
 
@@ -542,6 +577,7 @@ describe("webui i18n", () => {
         ...LOCALIZED_SETTINGS_COPY_KEYS,
         ...LOCALIZED_WORKSPACE_COPY_KEYS,
         ...LOCALIZED_CHANNEL_SHELL_KEYS,
+        ...LOCALIZED_AGENT_WORKBENCH_KEYS,
         ...LOCALIZED_NEW_SURFACE_KEYS,
       ].filter(
         (key) => current.get(key) === english.get(key),

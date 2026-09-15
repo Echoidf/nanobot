@@ -69,6 +69,71 @@ class SystemSettingsPayload(TypedDict):
     docs: dict[str, Any]
 
 
+def _runtime_tool_category(name: str) -> str:
+    if name.startswith("mcp_"):
+        return "mcp"
+    if name in {"read_file", "write_file", "edit_file", "list_files"}:
+        return "filesystem"
+    if name in {"run_command"}:
+        return "exec"
+    if name in {"web_search", "fetch_url"}:
+        return "web"
+    if name in {"create_subagent", "wait_for"}:
+        return "agents"
+    if name in {"generate_image"}:
+        return "image"
+    if name in {"my"}:
+        return "runtime"
+    return "other"
+
+
+def runtime_tools_payload(
+    config: Config,
+    tool_definitions: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    definitions = tool_definitions or []
+    tools: list[dict[str, Any]] = []
+    counts = {"builtin": 0, "mcp": 0, "runtime": 0}
+    for schema in definitions:
+        function = schema.get("function") or {}
+        name = str(function.get("name") or "").strip()
+        if not name:
+            continue
+        description = str(function.get("description") or "").strip()
+        parameters = function.get("parameters") if isinstance(function, dict) else {}
+        properties = parameters.get("properties") if isinstance(parameters, dict) else {}
+        required_names = set(parameters.get("required") or []) if isinstance(parameters, dict) else set()
+        source = "mcp" if name.startswith("mcp_") else ("runtime" if name == "my" else "builtin")
+        counts[source] += 1
+        tools.append({
+            "name": name,
+            "description": description,
+            "source": source,
+            "category": _runtime_tool_category(name),
+            "parameter_count": len(properties) if isinstance(properties, dict) else 0,
+            "parameters": [
+                {
+                    "name": prop_name,
+                    "type": prop_schema.get("type", "any") if isinstance(prop_schema, dict) else "any",
+                    "required": prop_name in required_names,
+                    "description": (
+                        prop_schema.get("description") if isinstance(prop_schema, dict) else None
+                    ),
+                }
+                for prop_name, prop_schema in (properties.items() if isinstance(properties, dict) else [])
+            ],
+        })
+    tools.sort(key=lambda item: (item["source"], item["category"], item["name"]))
+    return {
+        "tools": tools,
+        "counts": {
+            **counts,
+            "total": len(tools),
+        },
+        "restrict_to_workspace": config.tools.restrict_to_workspace,
+    }
+
+
 _DOCS_STABLE_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:\.post\d+)?$")
 _DOCS_LATEST_URL = "https://nanobot.wiki/docs/latest"
 _SKIP_FIELD = object()

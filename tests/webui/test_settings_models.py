@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from nanobot.config.schema import Config
 from nanobot.webui.settings_models import (
+    WebUISettingsError,
+    create_provider_settings,
+    delete_provider_settings,
     model_settings_payload,
     update_agent_model_settings,
     update_provider_settings,
@@ -56,3 +61,67 @@ def test_model_domain_owns_dto_and_config_updates() -> None:
         "providers",
     }
     assert payload["agent"]["model"] == "openai/gpt-5.4"
+
+
+def test_delete_custom_provider_removes_configuration() -> None:
+    config = Config()
+    provider_key = create_provider_settings(
+        config,
+        {
+            "name": ["Company Gateway"],
+            "api_base": ["https://gateway.example/v1"],
+            "api_key": ["sk-company"],
+        },
+    )
+    assert provider_key == "custom-company-gateway"
+    assert getattr(config.providers, provider_key).api_key == "sk-company"
+
+    changed, restart_required = delete_provider_settings(
+        config,
+        {"provider": ["custom-company-gateway"]},
+    )
+
+    assert changed is True
+    assert restart_required is False
+    assert not hasattr(config.providers, "custom-company-gateway")
+
+
+def test_delete_builtin_provider_resets_to_default() -> None:
+    config = Config()
+    config.providers.openrouter.api_key = "sk-before"
+
+    changed, restart_required = delete_provider_settings(
+        config,
+        {"provider": ["openrouter"]},
+    )
+
+    assert changed is True
+    assert restart_required is False
+    assert config.providers.openrouter.api_key is None
+
+
+def test_delete_provider_requires_provider_name() -> None:
+    config = Config()
+    with pytest.raises(WebUISettingsError, match="provider is required"):
+        delete_provider_settings(config, {})
+
+
+def test_delete_unknown_provider_raises() -> None:
+    config = Config()
+    with pytest.raises(WebUISettingsError, match="unknown provider"):
+        delete_provider_settings(config, {"provider": ["no_such_provider"]})
+
+
+def test_delete_provider_referenced_by_preset_is_blocked() -> None:
+    config = Config()
+    from nanobot.config.schema import ModelPresetConfig
+
+    config.model_presets["gpt"] = ModelPresetConfig(
+        model="gpt-5.4",
+        provider="openrouter",
+    )
+
+    with pytest.raises(WebUISettingsError, match="model configuration"):
+        delete_provider_settings(config, {"provider": ["openrouter"]})
+
+

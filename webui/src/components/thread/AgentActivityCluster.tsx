@@ -4,14 +4,13 @@ import {
   Clock3,
   Layers,
   Search,
-  Server,
   Terminal,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { cliAppInitials, mcpPresetInitials } from "@/components/CliAppMentionText";
+import { cliAppInitials } from "@/components/CliAppMentionText";
 import { ActivityStep } from "@/components/thread/activity/ActivityStep";
 import { coalesceActivityMessages } from "@/components/thread/activity/activity-message-model";
 import {
@@ -28,6 +27,7 @@ import {
 } from "@/components/thread/activity/generic-tool-model";
 import { ReasoningRow } from "@/components/thread/activity/ReasoningRow";
 import { describeMcpActivity } from "@/components/thread/activity/mcp-activity-model";
+import { McpToolRunCard } from "@/components/thread/activity/McpToolRunCard";
 import { ThinkingReasoningShell } from "@/components/thread/activity/ThinkingReasoningShell";
 import { WebActivityRow } from "@/components/thread/activity/WebActivityRow";
 import {
@@ -79,8 +79,12 @@ interface McpRunSummary {
   displayName: string;
   toolName: string;
   args: unknown;
+  /** Structured tool output, shown behind the card's expand once the call ends. */
+  result?: unknown;
   status: McpRunStatus;
   error?: string;
+  /** Client timestamp of the start event; drives the live elapsed label. */
+  startedAt?: number;
 }
 
 function countActivity(
@@ -918,7 +922,13 @@ const PRODUCT_NAME_OVERRIDES: Record<string, string> = {
 function mcpRunFromToolName(
   toolName: string,
   argsObject: unknown,
-  options: { key: string; status: McpRunStatus; error?: string },
+  options: {
+    key: string;
+    status: McpRunStatus;
+    error?: string;
+    result?: unknown;
+    startedAt?: number;
+  },
 ): McpRunSummary | null {
   const match = MCP_TOOL_NAME_RE.exec(toolName);
   if (!match) return null;
@@ -929,8 +939,10 @@ function mcpRunFromToolName(
     displayName: titleFromPresetName(presetName),
     toolName: match[2],
     args: argsObject,
+    result: options.result,
     status: options.status,
     error: options.error,
+    startedAt: options.startedAt,
   };
 }
 
@@ -958,7 +970,18 @@ function mcpRunFromEvent(event: ToolProgressEvent): McpRunSummary | null {
     key,
     status: cliRunStatusFromPhase(event.phase),
     error: cliRunError(event),
+    result: event.result,
   });
+}
+
+/**
+ * Stamp the row's own timestamp onto still-running calls. Reading ``Date.now()``
+ * here would reset the elapsed label on every render, and history replay must
+ * not invent a live clock.
+ */
+function withMcpRunStartedAt(run: McpRunSummary, createdAt: number | undefined): McpRunSummary {
+  if (run.status !== "running" || run.startedAt !== undefined || !createdAt) return run;
+  return { ...run, startedAt: createdAt };
 }
 
 function mcpRunMapByTraceLine(message: UIMessage): Map<string, McpRunSummary> {
@@ -969,16 +992,17 @@ function mcpRunMapByTraceLine(message: UIMessage): Map<string, McpRunSummary> {
     const line = formatToolCallTrace(event);
     if (!line) continue;
     const key = canonicalToolTrace(line);
-    runsByLine.set(key, mergeMcpRun(runsByLine.get(key), run));
+    const next = mergeMcpRun(runsByLine.get(key), withMcpRunStartedAt(run, message.createdAt));
+    runsByLine.set(key, next);
   }
   return runsByLine;
 }
 
 function mergeMcpRun(existing: McpRunSummary | undefined, incoming: McpRunSummary): McpRunSummary {
   if (!existing) return incoming;
-  return MCP_RUN_STATUS_RANK[incoming.status] >= MCP_RUN_STATUS_RANK[existing.status]
-    ? { ...existing, ...incoming }
-    : existing;
+  if (MCP_RUN_STATUS_RANK[incoming.status] < MCP_RUN_STATUS_RANK[existing.status]) return existing;
+  // The start event carries the only timestamp, so it must survive the merge.
+  return { ...existing, ...incoming, startedAt: incoming.startedAt ?? existing.startedAt };
 }
 
 function collectMcpRuns(messages: UIMessage[]): McpRunSummary[] {
@@ -1170,53 +1194,30 @@ function McpRunGroup({
 function McpRunRow({ run, active, preset }: { run: McpRunSummary; active: boolean; preset?: McpPresetInfo }) {
   const failed = run.status === "error";
   const rowActive = active && run.status === "running";
-  const color = failed ? "#DC2626" : preset?.brand_color || "#6D5DF6";
-  const logoUrls = useMemo(() => logoFallbackUrls(preset?.logo_url), [preset?.logo_url]);
-  const { logoUrl, onLogoError, onLogoLoad } = useLogoFallback(logoUrls);
-  const displayName = preset?.display_name || run.displayName;
   const activity = describeMcpActivity(
     run.toolName,
     run.args,
     failed ? "error" : rowActive ? "running" : "done",
   );
+  const displayName = preset?.display_name || run.displayName;
   const label = `${activity.action}${activity.target ? ` ${activity.target}` : ""} · ${displayName}`;
 
   return (
-    <ActivityStep
-      active={rowActive}
-      tone={failed ? "error" : rowActive ? "active" : run.status === "done" ? "success" : "neutral"}
+    <McpToolRunCard
+      run={{
+        key: run.key,
+        presetName: run.presetName,
+        displayName: run.displayName,
+        toolName: run.toolName,
+        args: run.args,
+        result: run.result,
+        status: run.status,
+        error: run.error,
+        startedAt: run.startedAt,
+      }}
+      active={active}
+      preset={preset}
       label={label}
-      marker={(
-        <span
-          data-testid={`activity-mcp-logo-${run.presetName.toLowerCase()}`}
-          className={cn(
-            "grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-mark border text-[6.5px] font-semibold text-white",
-            rowActive && "animate-pulse",
-          )}
-          style={{
-            borderColor: alphaColor(color, 22),
-            backgroundColor: logoUrl ? "hsl(var(--background))" : color,
-            boxShadow: rowActive ? `0 0 0 3px ${alphaColor(color, 9)}` : undefined,
-          }}
-          aria-hidden
-        >
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt=""
-              decoding="async"
-              loading="lazy"
-              className="h-[78%] w-[78%] object-contain"
-              onLoad={onLogoLoad}
-              onError={onLogoError}
-            />
-          ) : preset ? (
-            mcpPresetInitials(preset).slice(0, 2)
-          ) : (
-            <Server className="h-3 w-3" aria-hidden />
-          )}
-        </span>
-      )}
     />
   );
 }

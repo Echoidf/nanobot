@@ -256,7 +256,7 @@ export function AppsCatalogSettings({
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder={tx("settings.apps.searchPlaceholder", "Search Apps")}
               className={cn(
-                "h-12 pl-11 text-[15px]",
+                "h-12 border-border/55 pl-11 text-[15px]",
                 SETTINGS_SEARCH_INPUT_CLASS,
               )}
             />
@@ -283,13 +283,13 @@ export function AppsCatalogSettings({
 
       {requiresRestartPending ? (
         <RestartRequiredNotice
-          message={tx("settings.apps.restartRequired", "Restart nanobot to apply updated apps and MCP tools.")}
+          message={tx("settings.apps.restartRequired", "Restart nanodesk to apply updated apps and MCP tools.")}
           onRestart={onRestart}
           isRestarting={isRestarting}
         />
       ) : null}
 
-      <section className="rounded-panel bg-settings-surface px-3 py-3 sm:px-4">
+      <section className="rounded-panel border border-border/55 bg-settings-surface px-3 py-3 sm:px-4">
         <div className="flex items-center justify-between border-b border-border/45 pb-3">
           <SettingsSectionTitle>
             {filter === "mcp"
@@ -348,7 +348,7 @@ export function AppsCatalogSettings({
               <Button
                 type="button"
                 variant="outline"
-                className="mt-4 rounded-full"
+                className="mt-4 rounded-control border-border/55"
                 onClick={() => onQueryChange("")}
               >
                 {tx("settings.apps.clearSearch", "Clear search")}
@@ -357,7 +357,7 @@ export function AppsCatalogSettings({
               <Button
                 type="button"
                 variant="outline"
-                className="mt-4 rounded-full"
+                className="mt-4 rounded-control border-border/55"
                 onClick={() => onFilterChange(emptyBrowseTarget)}
               >
                 {emptyBrowseTarget === "cli"
@@ -412,7 +412,7 @@ function CliAppsCatalogRow({
   const description = app.description || app.requires || app.entry_point || app.name;
 
   return (
-    <article className="apps-catalog-row group flex min-w-0 items-center gap-3 rounded-control px-3 py-3 transition-colors hover:bg-muted/45">
+    <article className="apps-catalog-row group flex min-w-0 items-center gap-3 rounded-control border border-transparent px-3 py-3 transition-colors hover:border-border/45 hover:bg-muted/35">
       <CliAppLogo app={app} showBrandLogos={showBrandLogos} />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-baseline gap-2">
@@ -546,7 +546,7 @@ function McpAppsCatalogRow({
   const runtimeConnecting = !toggleable && preset.runtime_status === "connecting";
   const runtimeFailed = !toggleable && preset.runtime_status === "failed";
   const statusLabel = toggleable
-    ? tx("settings.nanobotFeatures.enabled", "Enabled")
+    ? tx("settings.nanodeskFeatures.enabled", "Enabled")
     : runtimeConnected
       ? tx("connection.open", "Connected")
       : mcpPresetStatusLabel(preset.status, tx);
@@ -678,7 +678,7 @@ function McpAppsCatalogRow({
                     onClick={() => onAction("disable", preset.name)}
                   >
                     <PauseCircle aria-hidden />
-                    {tx("settings.nanobotFeatures.disable", "Disable")}
+                    {tx("settings.nanodeskFeatures.disable", "Disable")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -699,8 +699,8 @@ function McpAppsCatalogRow({
             )
           ) : preset.enabled === false ? (
             <AppsActionButton
-              ariaLabel={tx("settings.nanobotFeatures.enable", "Enable")}
-              visibleLabel={tx("settings.nanobotFeatures.enable", "Enable")}
+              ariaLabel={tx("settings.nanodeskFeatures.enable", "Enable")}
+              visibleLabel={tx("settings.nanodeskFeatures.enable", "Enable")}
               busy={enableBusy}
               onClick={() => onAction("enable", preset.name, values)}
             />
@@ -1290,7 +1290,7 @@ function mcpOAuthStatusText(
       if (completionInput === "callback_url") {
         return tx(
           "settings.mcp.manualCallbackRequired",
-          "Finish signing in, then paste the callback URL into nanobot.",
+          "Finish signing in, then paste the callback URL into nanodesk.",
         );
       }
       return popupBlocked
@@ -1316,6 +1316,8 @@ function mcpPresetStatusLabel(
   switch (status) {
     case "configured":
       return tx("settings.mcp.statusConfigured", "Configured");
+    case "disabled":
+      return tx("settings.mcp.statusDisabled", "Turned off");
     case "missing_credentials":
       return tx("settings.mcp.statusMissingCredentials", "Needs key");
     case "missing_dependency":

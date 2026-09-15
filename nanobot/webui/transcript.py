@@ -780,6 +780,7 @@ class WebUITranscriptRecorder:
         cli_apps: list[dict[str, Any]] | None = None,
         mcp_presets: list[dict[str, Any]] | None = None,
         session_mentions: Sequence[Mapping[str, Any]] | None = None,
+        path_refs: Sequence[Mapping[str, Any]] | None = None,
     ) -> bool:
         if text.strip() == "/stop" and not media_paths:
             return False
@@ -790,6 +791,7 @@ class WebUITranscriptRecorder:
             cli_apps=cli_apps,
             mcp_presets=mcp_presets,
             session_mentions=session_mentions,
+            path_refs=path_refs,
         )
         if payload is None:
             return False
@@ -914,7 +916,7 @@ def write_session_messages_as_transcript(
                 row["media_paths"] = [
                     str(p) for p in cast(list[Any], media) if isinstance(p, str) and p
                 ]
-            for key in ("cli_apps", "mcp_presets", "session_mentions"):
+            for key in ("cli_apps", "mcp_presets", "session_mentions", "path_refs"):
                 value = msg.get(key)
                 if isinstance(value, list) and value:
                     row[key] = json.loads(json.dumps(value, ensure_ascii=False))
@@ -1022,6 +1024,7 @@ def build_user_transcript_event(
     cli_apps: list[Any] | None = None,
     mcp_presets: list[Any] | None = None,
     session_mentions: Sequence[Any] | None = None,
+    path_refs: Sequence[Any] | None = None,
 ) -> dict[str, Any] | None:
     paths = [str(path) for path in (media_paths or []) if path]
     if not text and not paths:
@@ -1050,6 +1053,15 @@ def build_user_transcript_event(
     mentions = normalize_session_mentions_metadata(session_mentions)
     if mentions:
         event["session_mentions"] = mentions
+    refs = [
+        {"path": str(item.get("path")), "kind": str(item.get("kind"))}
+        for item in (path_refs or [])
+        if isinstance(item, Mapping)
+        and isinstance(item.get("path"), str)
+        and item.get("kind") in {"file", "folder"}
+    ][:20]
+    if refs:
+        event["path_refs"] = refs
     return event
 
 
@@ -1092,6 +1104,10 @@ def _session_user_event(
         mcp_presets=cast(list[Any], mcp_presets) if isinstance(mcp_presets, list) else None,
         session_mentions=(
             cast(list[Any], session_mentions) if isinstance(session_mentions, list) else None
+        ),
+        path_refs=(
+            cast(list[Any], message.get("path_refs"))
+            if isinstance(message.get("path_refs"), list) else None
         ),
     )
 
@@ -2147,6 +2163,15 @@ def replay_transcript_to_ui_messages(
             )
             if session_mentions:
                 row["sessionMentions"] = session_mentions
+            path_refs = rec.get("path_refs")
+            if isinstance(path_refs, list) and path_refs:
+                row["pathRefs"] = [
+                    {"path": str(ref.get("path")), "kind": str(ref.get("kind"))}
+                    for ref in path_refs
+                    if isinstance(ref, Mapping)
+                    and isinstance(ref.get("path"), str)
+                    and ref.get("kind") in {"file", "folder"}
+                ][:20]
             if session_message := normalize_session_message_ui_metadata(
                 rec.get("session_message")
             ):

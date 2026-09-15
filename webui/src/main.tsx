@@ -28,7 +28,7 @@ initializeLoopbackRuntimeHost();
 
 async function renderWebui(container: HTMLElement) {
   await initializeI18n();
-  /* StrictMode disabled: dev double-invokes state updaters; delta accumulation must stay pure — see useNanobotStream. */
+  /* StrictMode disabled: dev double-invokes state updaters; delta accumulation must stay pure — see useNanodeskStream. */
   ReactDOM.createRoot(container).render(<App />);
 }
 

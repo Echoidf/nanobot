@@ -7,7 +7,7 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{ts,tsx}",
-    "../nanobot/channels/*/webui/**/*.{ts,tsx}",
+    "../nanodesk/channels/*/webui/**/*.{ts,tsx}",
     "./node_modules/streamdown/dist/*.js",
   ],
   theme: {
@@ -60,6 +60,12 @@ export default {
         prominent: "var(--radius-prominent)",
       },
       colors: {
+        cyan: {
+          300: "#7bd3e8",
+          500: "#1686a8",
+          600: "#11718f",
+          700: "#0f5e77",
+        },
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

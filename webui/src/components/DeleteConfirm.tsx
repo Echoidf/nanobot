@@ -20,6 +20,10 @@ interface DeleteConfirmProps {
   title: string;
   count?: number;
   automations?: SessionAutomationJob[];
+  /** Full heading override, e.g. when deleting a whole project's topics. */
+  heading?: string;
+  /** Body override, only applied when no linked automations need explaining. */
+  description?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -29,6 +33,8 @@ export function DeleteConfirm({
   title,
   count = 1,
   automations = [],
+  heading,
+  description,
   onCancel,
   onConfirm,
 }: DeleteConfirmProps) {
@@ -50,12 +56,13 @@ export function DeleteConfirm({
             aria-hidden
           />
           <AlertDialogTitle className="text-center text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-            {multiple
-              ? t("deleteConfirm.titleMany", {
-                  defaultValue: "Delete {{count}} conversations?",
-                  count,
-                })
-              : t("deleteConfirm.title", { title })}
+            {heading
+              ?? (multiple
+                ? t("deleteConfirm.titleMany", {
+                    defaultValue: "Delete {{count}} conversations?",
+                    count,
+                  })
+                : t("deleteConfirm.title", { title }))}
           </AlertDialogTitle>
           <AlertDialogDescription className="mt-3 max-w-[17rem] text-center text-[14px] leading-6 text-muted-foreground">
             {hasAutomations
@@ -65,10 +72,10 @@ export function DeleteConfirm({
                   })
                 : t("deleteConfirm.automationsDescription")
               : multiple
-                ? t("deleteConfirm.descriptionMany", {
+                ? (description ?? t("deleteConfirm.descriptionMany", {
                     defaultValue: "This action cannot be undone.",
-                  })
-                : t("deleteConfirm.description")}
+                  }))
+                : (description ?? t("deleteConfirm.description"))}
           </AlertDialogDescription>
           {hasAutomations ? (
             <div className="mt-4 max-h-40 w-full overflow-y-auto rounded-2xl bg-muted/55 px-3 py-2 text-left">

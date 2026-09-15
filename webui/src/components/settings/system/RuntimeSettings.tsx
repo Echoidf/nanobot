@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Eye, EyeOff, Loader2, PauseCircle, PlayCircle, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Eye, EyeOff, Loader2, PauseCircle, PlayCircle, RotateCcw, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { AgentSettingsDraft } from "@/components/settings/models/ModelsSettings";
@@ -14,11 +14,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { fetchRuntimeTools } from "@/lib/api";
 import { isLoopbackHost } from "@/lib/network";
 import { getRuntimeHost, isNativeRuntime } from "@/lib/runtime";
-import type { ApiServicePayload, NanobotFeatureInfo, SettingsPayload } from "@/lib/types";
+import type { ApiServicePayload, NanodeskFeatureInfo, RuntimeToolsPayload, SettingsPayload } from "@/lib/types";
 
 export function RuntimeSettings({
+  token,
   form,
   settings,
   onRestart,
@@ -35,6 +37,7 @@ export function RuntimeSettings({
   onApiServiceAction,
   onInstallCapability,
 }: {
+  token: string;
   form: AgentSettingsDraft;
   settings: SettingsPayload;
   onRestart?: () => void;
@@ -44,7 +47,7 @@ export function RuntimeSettings({
   apiServiceLoading: boolean;
   apiServiceAction: "start" | "stop" | null;
   apiServiceError: string | null;
-  langfuseFeature?: NanobotFeatureInfo;
+  langfuseFeature?: NanodeskFeatureInfo;
   capabilitiesLoading: boolean;
   capabilityAction: string | null;
   capabilityError: string | null;
@@ -83,12 +86,15 @@ export function RuntimeSettings({
     timeout: settings.api?.timeout ?? 120,
     api_key_hint: settings.api?.api_key_hint,
     endpoint: `http://127.0.0.1:${settings.api?.port ?? 8900}/v1`,
-    command: "nanobot serve",
+    command: "nanodesk serve",
   };
   const [apiHost, setApiHost] = useState(apiDefaults.host);
   const [apiPort, setApiPort] = useState(apiDefaults.port);
   const [apiKey, setApiKey] = useState("");
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [runtimeTools, setRuntimeTools] = useState<RuntimeToolsPayload | null>(null);
+  const [runtimeToolsLoading, setRuntimeToolsLoading] = useState(true);
+  const [runtimeToolsError, setRuntimeToolsError] = useState<string | null>(null);
   useEffect(() => {
     if (!apiService) return;
     setApiHost(apiService.host);
@@ -96,6 +102,38 @@ export function RuntimeSettings({
     setApiKey("");
     setApiKeyVisible(false);
   }, [apiService]);
+  useEffect(() => {
+    let cancelled = false;
+    setRuntimeToolsLoading(true);
+    setRuntimeToolsError(null);
+    void fetchRuntimeTools(token)
+      .then((payload) => {
+        if (cancelled) return;
+        setRuntimeTools(payload);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setRuntimeToolsError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load runtime tools.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setRuntimeToolsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+  const toolGroups = useMemo(() => {
+    const tools = runtimeTools?.tools ?? [];
+    return {
+      builtin: tools.filter((tool) => tool.source === "builtin"),
+      mcp: tools.filter((tool) => tool.source === "mcp"),
+      runtime: tools.filter((tool) => tool.source === "runtime"),
+    };
+  }, [runtimeTools]);
   const apiNetworkAccess = !isLoopbackHost(apiHost);
   const apiMissingNetworkKey = apiNetworkAccess && !apiKey.trim() && !apiDefaults.api_key_hint;
   const engineState = isRestarting
@@ -329,7 +367,7 @@ export function RuntimeSettings({
                 ? undefined
                 : tx(
                     "settings.observability.environment",
-                    "Set LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY, then restart nanobot.",
+                    "Set LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY, then restart nanodesk.",
                   )
             }
           >
@@ -360,6 +398,83 @@ export function RuntimeSettings({
           </SettingsRow>
         </SettingsGroup>
         {capabilityError ? <p className="mt-2 text-[12px] text-destructive">{capabilityError}</p> : null}
+      </section>
+
+      <section>
+        <SettingsSectionTitle>{tx("settings.sections.tools", "Runtime tools")}</SettingsSectionTitle>
+        <SettingsGroup>
+          <SettingsRow
+            title={tx("settings.runtime.toolsAvailable", "Available tools")}
+            description={
+              runtimeTools?.restrict_to_workspace === true
+                ? tx("settings.runtime.toolsWorkspaceRestricted", "Filesystem and command tools are currently restricted to the default workspace.")
+                : tx("settings.runtime.toolsHelp", "This is the live tool catalog currently registered in the runtime.")
+            }
+          >
+            {runtimeToolsLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
+            ) : (
+              <StatusPill tone="neutral">
+                {runtimeTools?.counts?.total ?? 0}
+              </StatusPill>
+            )}
+          </SettingsRow>
+          {runtimeToolsError ? (
+            <div className="px-4 pb-4 text-[12px] text-destructive">{runtimeToolsError}</div>
+          ) : null}
+          {!runtimeToolsLoading ? (
+            <div className="space-y-4 px-4 pb-4">
+              {([
+                ["builtin", tx("settings.runtime.builtinTools", "Built-in")],
+                ["mcp", tx("settings.runtime.mcpTools", "MCP")],
+                ["runtime", tx("settings.runtime.runtimeTools", "Runtime")],
+              ] as const).map(([group, label]) => {
+                const tools = toolGroups[group];
+                if (!tools.length) return null;
+                return (
+                  <div key={group} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[12px] font-medium text-foreground">{label}</p>
+                      <span className="text-[11px] text-muted-foreground">{tools.length}</span>
+                    </div>
+                    <div className="overflow-hidden rounded-lg border border-border/70">
+                      {tools.map((tool) => (
+                        <div key={tool.name} className="border-t border-border/60 px-3 py-3 first:border-t-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Wrench className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                                <p className="truncate text-[13px] font-medium text-foreground">{tool.name}</p>
+                              </div>
+                              <p className="text-[12px] leading-5 text-muted-foreground">
+                                {tool.description || tx("settings.runtime.noToolDescription", "No description.")}
+                              </p>
+                              {tool.parameters.length ? (
+                                <p className="text-[11px] leading-5 text-muted-foreground">
+                                  {tool.parameters.map((parameter) => (
+                                    `${parameter.name}: ${parameter.type}${parameter.required ? "" : "?"}`
+                                  )).join(", ")}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                              {tool.parameter_count} {tool.parameter_count === 1 ? tx("settings.runtime.parameter", "parameter") : tx("settings.runtime.parameters", "parameters")}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {runtimeTools && (runtimeTools.counts?.total ?? 0) === 0 ? (
+                <p className="text-[12px] text-muted-foreground">
+                  {tx("settings.runtime.noTools", "No runtime tools are currently registered.")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </SettingsGroup>
       </section>
 
       <section>

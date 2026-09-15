@@ -45,6 +45,7 @@ def default_webui_sidebar_state() -> dict[str, Any]:
         "session_order": [],
         "title_overrides": {},
         "project_name_overrides": {},
+        "hidden_project_keys": [],
         "tags_by_key": {},
         "collapsed_groups": {},
         "workbench": {"version": 1, "tabs": {}},
@@ -212,6 +213,7 @@ def normalize_webui_sidebar_state(raw: Any) -> dict[str, Any]:
     state["project_name_overrides"] = _clean_title_overrides(
         raw.get("project_name_overrides")
     )
+    state["hidden_project_keys"] = _clean_string_list(raw.get("hidden_project_keys"))
     state["tags_by_key"] = _clean_tags_by_key(raw.get("tags_by_key"))
     state["collapsed_groups"] = _clean_bool_map(raw.get("collapsed_groups"))
     state["workbench"] = _clean_workbench(raw.get("workbench"))

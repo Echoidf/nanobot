@@ -56,9 +56,19 @@ class SkillsLoader:
     specific tools or perform certain tasks.
     """
 
-    def __init__(self, workspace: Path, builtin_skills_dir: Path | None = None, disabled_skills: set[str] | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        builtin_skills_dir: Path | None = None,
+        disabled_skills: set[str] | None = None,
+        default_workspace: Path | None = None,
+    ):
         self.workspace = workspace
         self.workspace_skills = workspace / "skills"
+        self.default_workspace = default_workspace
+        self.default_workspace_skills = (
+            default_workspace / "skills" if default_workspace is not None else None
+        )
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
         self.disabled_skills = disabled_skills or set()
 
@@ -113,6 +123,19 @@ class SkillsLoader:
                 }
             )
             seen_names.add(name)
+        if self.default_workspace_skills is not None:
+            skills.extend(
+                self._skill_entries_from_dir(
+                    self.default_workspace_skills,
+                    "default_workspace",
+                    skip_names=seen_names,
+                )
+            )
+            seen_names.update(
+                entry["name"]
+                for entry in skills
+                if entry["source"] == "default_workspace"
+            )
         if self.builtin_skills and self.builtin_skills.exists():
             skills.extend(
                 self._skill_entries_from_dir(self.builtin_skills, "builtin", skip_names=seen_names)
@@ -179,6 +202,24 @@ class SkillsLoader:
                 invoked.append(name)
         return invoked
 
+    def clean_explicit_skill_references(self, text: str) -> str:
+        """Remove available ``$skill-name`` references before model inference."""
+        if not text:
+            return text
+        available = {
+            entry["name"]
+            for entry in self.list_skills(filter_unavailable=True)
+        }
+        aliases = self._skill_aliases()
+
+        def replace_reference(match: re.Match[str]) -> str:
+            requested = match.group(1)
+            resolved = requested if requested in available else aliases.get(requested, requested)
+            return "" if resolved in available else match.group(0)
+
+        cleaned = _SKILL_REFERENCE.sub(replace_reference, text)
+        return re.sub(r"[ \t]{2,}", " ", cleaned)
+
     def build_explicit_skill_runtime_context(
         self,
         text: str,
@@ -192,14 +233,7 @@ class SkillsLoader:
         content = self.load_skills_for_context(skill_names)
         if not content:
             return None
-        return RuntimeContextBlock(
-            source="explicit_skills",
-            content=(
-                "[Active Skills — instructions for this user turn]\n"
-                f"{content}\n"
-                "[/Active Skills]"
-            ),
-        )
+        return RuntimeContextBlock(source="explicit_skills", content=content)
 
     def build_skills_summary(self, exclude: set[str] | None = None) -> str:
         """
@@ -222,9 +256,16 @@ class SkillsLoader:
         groups = (
             ("Workspace skills", "workspace", self.workspace_skills),
             ("Agent Plugin skills", "plugin", self.workspace / "plugins"),
+            (
+                "Default workspace skills",
+                "default_workspace",
+                self.default_workspace_skills,
+            ),
             ("Built-in skills", "builtin", self.builtin_skills),
         )
         for label, source, root in groups:
+            if root is None:
+                continue
             entries = [
                 entry
                 for entry in all_skills

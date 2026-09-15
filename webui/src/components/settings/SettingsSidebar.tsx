@@ -75,7 +75,7 @@ export function SettingsSidebar({
   return (
     <aside
       className={cn(
-        "flex w-full shrink-0 flex-col bg-settings-surface px-3 pb-2 lg:w-[17rem] lg:px-3 lg:pb-4",
+        "flex w-full shrink-0 flex-col border-b border-border/55 bg-settings-surface px-3 pb-2 lg:w-[17rem] lg:border-b-0 lg:border-r lg:border-border/55 lg:px-3 lg:pb-4",
         hostChromeInset ? "pt-[4.25rem] lg:pt-[4.25rem]" : "pt-4 lg:pt-4",
       )}
     >
@@ -102,7 +102,7 @@ export function SettingsSidebar({
             <button
               type="button"
               aria-label={`${t("settings.sidebar.title")}: ${activeLabel}`}
-              className="touch-target flex h-11 w-full items-center gap-2.5 rounded-control bg-sidebar-accent px-3 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-sidebar-accent/80 lg:hidden"
+              className="touch-target flex h-11 w-full items-center gap-2.5 rounded-control border border-border/45 bg-sidebar-accent/65 px-3 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-sidebar-accent lg:hidden"
             >
               <ActiveIcon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
               <span className="min-w-0 flex-1 truncate">{activeLabel}</span>
@@ -153,7 +153,7 @@ export function SettingsSidebar({
                 aria-current={active ? "page" : undefined}
                 onClick={() => onSelectSection(key)}
                 className={cn(
-                  "touch-target flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-[13px] font-medium",
+                  "touch-target flex h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium",
                   SIDEBAR_SELECTION_ITEM_CLASS,
                   active
                     ? "text-sidebar-accent-foreground"

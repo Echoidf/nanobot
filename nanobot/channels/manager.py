@@ -102,6 +102,7 @@ class ChannelManager:
         webui_static_dist: bool = True,
         webui_runtime_surface: str = "browser",
         webui_runtime_capabilities: dict[str, Any] | None = None,
+        webui_tool_definitions: Callable[[], list[dict[str, Any]]] | None = None,
         webui_mcp_runtime_status: Callable[[], Mapping[str, str]] | None = None,
         webui_mcp_reload: Callable[[], Awaitable[dict[str, Any]]] | None = None,
         webui_skill_state_action: Callable[[set[str]], None] | None = None,
@@ -124,6 +125,7 @@ class ChannelManager:
         self._webui_static_dist = webui_static_dist
         self._webui_runtime_surface = webui_runtime_surface
         self._webui_runtime_capabilities = dict(webui_runtime_capabilities or {})
+        self._webui_tool_definitions = webui_tool_definitions
         self._webui_mcp_runtime_status = webui_mcp_runtime_status
         self._webui_mcp_reload = webui_mcp_reload
         self._webui_skill_state_action = webui_skill_state_action
@@ -189,6 +191,7 @@ class ChannelManager:
                 refresh_runtime_config=self._webui_refresh_runtime_config,
                 runtime_surface=self._webui_runtime_surface,
                 runtime_capabilities_overrides=self._webui_runtime_capabilities,
+                tool_definitions=self._webui_tool_definitions,
                 cron_service=self._cron_service,
                 local_trigger_store=self._local_trigger_store,
                 cron_pending_job_ids=self._webui_cron_pending_job_ids,

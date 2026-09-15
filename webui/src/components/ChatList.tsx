@@ -13,6 +13,7 @@ import {
   ArchiveRestore,
   ChevronDown,
   Folder,
+  FolderMinus,
   FolderTree,
   ListChecks,
   MessageCircleDashed,
@@ -23,6 +24,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RotateCcw,
   Square,
   SquareCheckBig,
   SquareMinus,
@@ -37,6 +39,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -55,12 +58,14 @@ import {
   COLLAPSED_CHATS_VISIBLE_COUNT,
   displayTitle,
   groupSessions,
+  hiddenProjectEntries,
   isCollapsedProject,
   isFoldableChatsGroup,
   isFoldedChatsGroup,
   limitGroups,
   visibleSessionsForGroup,
   type ChatGroupLabels,
+  type HiddenProjectEntry,
 } from "@/lib/chat-groups";
 import { deriveTemporaryChatTitle } from "@/lib/temporary-chat";
 import { sessionHandleColor } from "@/lib/session-handle";
@@ -76,7 +81,7 @@ import type { ChatSummary, SidebarDensity, SidebarSortMode } from "@/lib/types";
 const INITIAL_VISIBLE_SESSIONS = 160;
 const VISIBLE_SESSIONS_INCREMENT = 160;
 const ACTION_MENU_CONTENT_CLASS = "w-[11rem] min-w-[11rem] whitespace-nowrap";
-const COLLAPSED_PANE_GROUPS_STORAGE_KEY = "nanobot-webui.collapsed-pane-groups.v1";
+const COLLAPSED_PANE_GROUPS_STORAGE_KEY = "nanodesk-webui.collapsed-pane-groups.v1";
 const DETACH_PANE_DROP_TARGET = "__sidebar-standalone__";
 
 interface SidebarActionMenuController {
@@ -250,6 +255,9 @@ interface ChatListProps {
   onToggleGroup?: (groupId: string) => void;
   onRequestRenameProject?: (projectKey: string, label: string) => void;
   onNewChatInProject?: (projectPath: string, projectName: string) => void;
+  onRequestRemoveProject?: (projectKey: string) => void;
+  onRequestDeleteProject?: (projectKey: string, label: string) => void;
+  onRestoreProject?: (projectKey: string) => void;
   pinnedKeys?: string[];
   archivedKeys?: string[];
   pinnedPaneKeys?: string[];
@@ -257,6 +265,7 @@ interface ChatListProps {
   sessionOrder?: string[];
   titleOverrides?: Record<string, string>;
   projectNameOverrides?: Record<string, string>;
+  hiddenProjectKeys?: string[];
   collapsedGroups?: Record<string, boolean>;
   runningChatIds?: string[];
   updatedChatIds?: string[];
@@ -292,6 +301,9 @@ export const ChatList = memo(function ChatList({
   onToggleGroup,
   onRequestRenameProject,
   onNewChatInProject,
+  onRequestRemoveProject,
+  onRequestDeleteProject,
+  onRestoreProject,
   pinnedKeys = [],
   archivedKeys = [],
   pinnedPaneKeys = [],
@@ -299,6 +311,7 @@ export const ChatList = memo(function ChatList({
   sessionOrder = [],
   titleOverrides = {},
   projectNameOverrides = {},
+  hiddenProjectKeys = [],
   collapsedGroups = {},
   runningChatIds = [],
   updatedChatIds = [],
@@ -379,6 +392,7 @@ export const ChatList = memo(function ChatList({
       archivedKeys,
       titleOverrides,
       projectNameOverrides,
+      hiddenProjectKeys,
       sessionOrder,
       showArchived,
       sort,
@@ -393,9 +407,18 @@ export const ChatList = memo(function ChatList({
       sort,
       titleOverrides,
       projectNameOverrides,
+      hiddenProjectKeys,
       sessionOrder,
       defaultWorkspacePath,
     ],
+  );
+  const removedProjects = useMemo(
+    () => hiddenProjectEntries(sessions, {
+      hiddenProjectKeys,
+      projectNameOverrides,
+      defaultWorkspacePath,
+    }),
+    [defaultWorkspacePath, hiddenProjectKeys, projectNameOverrides, sessions],
   );
   const limitedGroups = useMemo(
     () => limitGroups(groups, visibleLimit, activeKey, collapsedGroups),
@@ -726,6 +749,7 @@ export const ChatList = memo(function ChatList({
                     <ProjectGroupHeader
                       label={group.label}
                       path={group.projectPath}
+                      topicCount={group.sessions.length}
                       actionMenuId={`project:${group.id}`}
                       actionMenus={actionMenus}
                       collapsed={projectCollapsed}
@@ -733,6 +757,16 @@ export const ChatList = memo(function ChatList({
                       onRequestRename={
                         group.projectKey && onRequestRenameProject
                           ? () => onRequestRenameProject(group.projectKey ?? "", group.label)
+                          : undefined
+                      }
+                      onRemove={
+                        group.projectKey && onRequestRemoveProject
+                          ? () => onRequestRemoveProject(group.projectKey ?? "")
+                          : undefined
+                      }
+                      onDeleteTopics={
+                        group.projectKey && onRequestDeleteProject && group.sessions.length > 0
+                          ? () => onRequestDeleteProject(group.projectKey ?? "", group.label)
                           : undefined
                       }
                       onNewChat={
@@ -1142,6 +1176,12 @@ export const ChatList = memo(function ChatList({
               {t("chat.showMore", { count: hiddenSessionCount })}
             </button>
           </div>
+        ) : null}
+        {removedProjects.length > 0 ? (
+          <RemovedProjectsSection
+            entries={removedProjects}
+            onRestore={onRestoreProject ?? (() => undefined)}
+          />
         ) : null}
         {deleteSelectionMode ? (
           <div
@@ -1691,27 +1731,34 @@ function TemporaryChatSection({
 function ProjectGroupHeader({
   label,
   path,
+  topicCount,
   actionMenuId,
   actionMenus,
   collapsed,
   onToggle,
   onRequestRename,
+  onRemove,
+  onDeleteTopics,
   onNewChat,
   actionMenuPortalContainer,
   updatedAt,
 }: {
   label: string;
   path?: string;
+  topicCount: number;
   actionMenuId: string;
   actionMenus: SidebarActionMenuController;
   collapsed: boolean;
   onToggle: () => void;
   onRequestRename?: () => void;
+  onRemove?: () => void;
+  onDeleteTopics?: () => void;
   onNewChat?: () => void;
   actionMenuPortalContainer?: HTMLElement | null;
   updatedAt?: string | null;
 }) {
   const { t } = useTranslation();
+  const hasActionMenu = Boolean(onRequestRename || onNewChat || onRemove || onDeleteTopics);
   const projectButton = (
     <button
       type="button"
@@ -1727,7 +1774,7 @@ function ProjectGroupHeader({
 
   return (
       <div
-        onContextMenu={onRequestRename || onNewChat
+        onContextMenu={hasActionMenu
           ? (event) => actionMenus.openFromContextMenu(event, actionMenuId)
           : undefined}
         className="group flex min-w-0 items-center gap-1 px-1 pb-1 pt-1 text-[12px] font-medium text-muted-foreground/78"
@@ -1745,7 +1792,7 @@ function ProjectGroupHeader({
             {relativeTime(updatedAt)}
           </span>
         ) : null}
-        {onRequestRename || onNewChat ? (
+        {hasActionMenu ? (
           <DropdownMenu
             modal={false}
             open={actionMenus.openId === actionMenuId}
@@ -1780,6 +1827,32 @@ function ProjectGroupHeader({
                   {t("chat.rename")}
                 </DropdownMenuItem>
               ) : null}
+              {onRemove || onDeleteTopics ? <DropdownMenuSeparator /> : null}
+              {onRemove ? (
+                <DropdownMenuItem
+                  onSelect={onRemove}
+                  title={t("chat.removeProjectHint", {
+                    defaultValue: "Topics stay available, the project folder is hidden.",
+                  })}
+                >
+                  <FolderMinus className="h-4 w-4 shrink-0" aria-hidden />
+                  {t("chat.removeProject", { defaultValue: "Remove from sidebar" })}
+                </DropdownMenuItem>
+              ) : null}
+              {onDeleteTopics ? (
+                <DropdownMenuItem
+                  tone="destructive"
+                  onSelect={() => {
+                    window.setTimeout(onDeleteTopics, 0);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                  {t("chat.deleteProjectTopics", {
+                    defaultValue: "Delete {{count}} topics",
+                    count: topicCount,
+                  })}
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
@@ -1808,6 +1881,80 @@ function ProjectGroupHeader({
           </button>
         </SidebarItemTooltip>
       </div>
+  );
+}
+
+/**
+ * Projects the user removed from the sidebar. Their topics stay available under
+ * the plain topic list, so this section only offers a way to bring a folder back.
+ */
+function RemovedProjectsSection({
+  entries,
+  onRestore,
+}: {
+  entries: HiddenProjectEntry[];
+  onRestore: (projectKey: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const label = t("chat.removedProjects", {
+    count: entries.length,
+    defaultValue: "Removed projects",
+  });
+
+  return (
+    <section
+      data-sidebar-removed-projects
+      aria-label={label}
+      className="relative z-[1] space-y-0.5 border-t border-sidebar-border/50 pt-1"
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-medium text-muted-foreground/65 transition-colors hover:bg-sidebar-accent/45 hover:text-sidebar-foreground"
+      >
+        <FolderMinus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="shrink-0 tabular-nums">({entries.length})</span>
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
+            !expanded && "rotate-90",
+          )}
+        />
+      </button>
+      {expanded ? (
+        <ul className="space-y-0.5 pb-1">
+          {entries.map((entry) => (
+            <li key={entry.key}>
+              <div className="group flex min-w-0 items-center gap-1.5 px-2 py-1">
+                <SidebarItemTooltip label={entry.path}>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-muted-foreground/85">
+                    {entry.label}
+                  </span>
+                </SidebarItemTooltip>
+                <span className="shrink-0 text-[11px] text-muted-foreground/55 tabular-nums">
+                  {t("chat.removedProjectCount", {
+                    count: entry.sessionCount,
+                    defaultValue: "{{count}} topics",
+                  })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRestore(entry.key)}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px] font-medium text-muted-foreground/75 opacity-0 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("chat.restoreProject", { defaultValue: "Restore" })}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

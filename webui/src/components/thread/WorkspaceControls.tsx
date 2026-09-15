@@ -74,13 +74,13 @@ export function WorkspaceProjectPicker({
   const pathInputRef = useRef<HTMLInputElement>(null);
   const pathErrorId = useId();
   const currentProjectScope = selectedProjectScope(scope, defaultScope);
-  const projectLabel = currentProjectScope
-    ? currentProjectScope.project_name || projectNameFromPath(currentProjectScope.project_path)
+  const projectLabel = scope
+    ? scope.project_name || projectNameFromPath(scope.project_path)
     : t("thread.composer.workspace.projectPlaceholder");
-  const visible = isHero
-    && !!defaultScope
+  const visible = !!defaultScope
     && !!onChange
-    && controls?.can_change_project !== false;
+    && controls?.can_change_project !== false
+    && (isHero || compact);
   const pickFolder = getRuntimeHost().pickFolder ?? onPickFolder;
   const nativeProjectPicker = !!pickFolder;
 
@@ -154,19 +154,19 @@ export function WorkspaceProjectPicker({
           type="button"
           disabled={disabled || pickingFolder}
           aria-label={t("thread.composer.workspace.projectAria")}
-          title={currentProjectScope?.project_path}
+          title={scope?.project_path}
           onClick={() => void pickNativeFolder()}
           className={cn(
             compact
-              ? "thread-composer-action touch-target inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent"
+              ? "thread-composer-action touch-target inline-flex h-8 max-w-[14rem] items-center gap-2 rounded-full border border-transparent px-2.5"
               : "inline-flex h-7 max-w-full items-center gap-2 rounded-full px-2.5 sm:max-w-[18rem]",
             "text-[12px] font-medium text-muted-foreground/90 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-55",
             compact ? "hover:bg-muted/65" : "hover:bg-background/70",
-            (connected || currentProjectScope) && "text-primary",
+            (connected || scope) && "text-primary",
           )}
         >
           <Folder className={cn("shrink-0", compact ? "h-4 w-4" : "h-3.5 w-3.5")} />
-          <span className={compact ? "sr-only" : "truncate"}>{projectLabel}</span>
+          <span className={compact ? "max-w-[10rem] truncate" : "truncate"}>{projectLabel}</span>
         </button>
         {!compact && (pathError || error) ? (
           <span role="alert" className="ml-2 min-w-0 truncate text-[11.5px] font-medium text-destructive">
@@ -192,7 +192,7 @@ export function WorkspaceProjectPicker({
             aria-label={t("thread.composer.workspace.projectAria")}
             className={cn(
               compact
-                ? "thread-composer-action touch-target inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent"
+                ? "thread-composer-action touch-target inline-flex h-8 max-w-[14rem] items-center gap-2 rounded-full border border-transparent px-2.5"
                 : "inline-flex h-7 max-w-full items-center gap-2 rounded-full px-2.5 sm:max-w-[18rem]",
               "text-[12px] font-medium text-muted-foreground/90 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-55",
               compact ? "hover:bg-muted/65" : "hover:bg-background/70",
@@ -200,7 +200,7 @@ export function WorkspaceProjectPicker({
             )}
           >
             <Folder className={cn("shrink-0", compact ? "h-4 w-4" : "h-3.5 w-3.5")} />
-            <span className={compact ? "sr-only" : "truncate"}>{projectLabel}</span>
+            <span className={compact ? "max-w-[10rem] truncate" : "truncate"}>{projectLabel}</span>
             {!compact ? (
               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             ) : null}
@@ -331,7 +331,7 @@ export function WorkspaceAccessMenu({
             "thread-composer-access touch-target min-w-0 max-w-[min(12.5rem,42vw)] whitespace-nowrap rounded-control border border-transparent font-semibold shadow-none",
             isHero ? "h-8 px-2.5 text-[12px]" : "h-9 px-3 text-[12.5px]",
             isFull
-              ? "bg-transparent text-orange-600 hover:bg-orange-500/8 dark:text-orange-300 dark:hover:bg-orange-400/10"
+              ? "bg-transparent text-cyan-700 hover:bg-cyan-500/8 dark:text-cyan-300 dark:hover:bg-cyan-400/10"
               : "bg-transparent text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground dark:hover:bg-white/[0.06]",
           )}
         >
@@ -390,7 +390,7 @@ function AccessMenuItem({
       onSelect={onSelect}
       className={cn(
         "flex h-10 items-center gap-3 px-3 text-[13.5px] font-semibold",
-        warning && "text-orange-600 focus:text-orange-600 dark:text-orange-300 dark:focus:text-orange-300",
+        warning && "text-cyan-700 focus:text-cyan-700 dark:text-cyan-300 dark:focus:text-cyan-300",
       )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center text-current" aria-hidden>

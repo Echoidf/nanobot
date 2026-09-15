@@ -11,6 +11,7 @@ import {
 import { Eye, EyeOff, Moon, PanelLeft, ShieldCheck, Sun, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { channelUiPresentation } from "@/channel-plugins/registry";
+import { AgentWorkbenchView } from "@/components/agents/AgentWorkbenchView";
 import { Sidebar } from "@/components/Sidebar";
 import type { SidebarDeleteItem } from "@/components/ChatList";
 import type { SettingsSectionKey } from "@/components/settings/SettingsView";
@@ -56,10 +57,12 @@ import {
   saveSecret,
 } from "@/lib/bootstrap";
 import { displayTitle, sortSessions } from "@/lib/chat-groups";
+import type { AgentProfileUpdate } from "@/lib/api";
 import { deriveTitle } from "@/lib/format";
-import { NanobotClient } from "@/lib/nanobot-client";
+import { NanodeskClient } from "@/lib/nanodesk-client";
 import { ClientProvider, useClient } from "@/providers/ClientProvider";
 import type {
+  AgentsPayload,
   BootstrapResponse,
   ChatSummary,
   RuntimeSurface,
@@ -72,6 +75,8 @@ import type {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  fetchAgents,
+  mutateAgentProfile,
   fetchPairingRequests,
   fetchSettings,
   fetchWorkspaces,
@@ -81,7 +86,7 @@ import {
   createRuntimeHost,
   toRuntimeSurface,
 } from "@/lib/runtime";
-import { projectNameFromPath, scopeWithAccessMode } from "@/lib/workspace";
+import { projectNameFromPath, normalizeWorkspacePath, scopeWithAccessMode } from "@/lib/workspace";
 import {
   createTemporaryChatSession,
   deriveTemporaryChatTitle,
@@ -93,19 +98,21 @@ type BootState =
   | { status: "auth"; failed?: boolean }
   | {
       status: "ready";
-      client: NanobotClient;
+      client: NanodeskClient;
       token: string;
       tokenExpiresAt: number | null;
       modelName: string | null;
+      siteTitle: string | null;
       ingressLimits: BootstrapResponse["limits"] | null;
       runtimeSurface: RuntimeSurface;
+      agents: AgentsPayload | null;
     };
 
-const SIDEBAR_STORAGE_KEY = "nanobot-webui.sidebar";
-const SESSION_UPDATES_STORAGE_KEY = "nanobot-webui.sidebar.session-updates.v1";
-const LEGACY_COMPLETED_RUNS_STORAGE_KEY = "nanobot-webui.sidebar.completed-runs.v1";
-const RESTART_STARTED_KEY = "nanobot-webui.restartStartedAt";
-const RESTART_ROUTE_KEY = "nanobot-webui.restartRoute";
+const SIDEBAR_STORAGE_KEY = "nanodesk-webui.sidebar";
+const SESSION_UPDATES_STORAGE_KEY = "nanodesk-webui.sidebar.session-updates.v1";
+const LEGACY_COMPLETED_RUNS_STORAGE_KEY = "nanodesk-webui.sidebar.completed-runs.v1";
+const RESTART_STARTED_KEY = "nanodesk-webui.restartStartedAt";
+const RESTART_ROUTE_KEY = "nanodesk-webui.restartRoute";
 const RESTART_ROUTE_TTL_MS = 5 * 60 * 1000;
 const SIDEBAR_WIDTH = 272;
 const SIDEBAR_RAIL_WIDTH = 56;
@@ -115,11 +122,12 @@ const TOKEN_REFRESH_MIN_DELAY_MS = 5_000;
 const PAIRING_POLL_INTERVAL_MS = 5_000;
 const PAIRING_IDLE_POLL_INTERVAL_MS = 15_000;
 const PAIRING_DISMISS_SNOOZE_MS = 30_000;
-type ShellView = "chat" | "settings" | "apps" | "automations" | "skills";
+type ShellView = "chat" | "settings" | "apps" | "automations" | "skills" | "agents" | "mcp";
 type ShellRoute = {
   view: ShellView;
   activeKey: string | null;
   settingsSection: SettingsSectionKey;
+  agentId?: string | null;
   temporary?: boolean;
 };
 const loadSettingsView = () => import("@/components/settings/SettingsView");
@@ -130,6 +138,11 @@ const SettingsView = lazy(async () => {
 const SessionSearchDialog = lazy(async () => {
   const module = await import("@/components/SessionSearchDialog");
   return { default: module.SessionSearchDialog };
+});
+const loadMcpServersView = () => import("@/components/settings/mcp/McpServersView");
+const McpServersView = lazy(async () => {
+  const module = await loadMcpServersView();
+  return { default: module.McpServersView };
 });
 const DeleteConfirm = lazy(async () => {
   const module = await import("@/components/DeleteConfirm");
@@ -167,6 +180,7 @@ const SETTINGS_SECTION_KEYS: SettingsSectionKey[] = [
   "apps",
   "automations",
   "skills",
+  "mcp",
   "runtime",
   "advanced",
 ];
@@ -180,7 +194,9 @@ function defaultShellRoute(): ShellRoute {
 }
 
 function shellViewForSettingsSection(section: SettingsSectionKey): ShellView {
-  if (section === "apps" || section === "automations" || section === "skills") return section;
+  if (section === "apps" || section === "automations" || section === "skills" || section === "mcp") {
+    return section;
+  }
   return "settings";
 }
 
@@ -251,6 +267,17 @@ function readShellRoute(): ShellRoute {
   if (path === "/skills") {
     return { view: "skills", activeKey, settingsSection: "skills" };
   }
+  if (path === "/agents") {
+    return {
+      view: "agents",
+      activeKey,
+      settingsSection: "overview",
+      agentId: params.get("agent")?.trim() || null,
+    };
+  }
+  if (path === "/mcp") {
+    return { view: "mcp", activeKey, settingsSection: "mcp" };
+  }
   if (path.startsWith("/temporary/")) {
     const encoded = path.slice("/temporary/".length);
     try {
@@ -295,6 +322,9 @@ function shellRouteHash(route: ShellRoute): string {
   if (route.activeKey) params.set("chat", route.activeKey);
   if (route.view === "settings" && route.settingsSection !== "overview") {
     params.set("section", route.settingsSection);
+  }
+  if (route.view === "agents" && route.agentId) {
+    params.set("agent", route.agentId);
   }
   const query = params.toString();
   return `#/${route.view}${query ? `?${query}` : ""}`;
@@ -811,7 +841,7 @@ export default function App() {
   const bootstrapSecretRef = useRef("");
 
   const refreshReadyClient = useCallback(
-    async (client: NanobotClient, fallbackSurface: RuntimeSurface) => {
+    async (client: NanodeskClient, fallbackSurface: RuntimeSurface) => {
       const boot = await fetchBootstrap("", bootstrapSecretRef.current);
       const url = deriveWsUrl(boot.ws_path, boot.token, boot.ws_url);
       const runtimeSurface = boot.runtime_surface
@@ -834,8 +864,10 @@ export default function App() {
               token: boot.api_token ?? "",
               tokenExpiresAt,
               modelName: boot.model_name ?? current.modelName,
+              siteTitle: boot.site_title ?? current.siteTitle,
               ingressLimits: boot.limits ?? current.ingressLimits,
               runtimeSurface,
+              agents: boot.agents ?? current.agents,
             }
           : current,
       );
@@ -856,7 +888,7 @@ export default function App() {
           const url = deriveWsUrl(boot.ws_path, boot.token, boot.ws_url);
           const runtimeSurface = toRuntimeSurface(boot.runtime_surface);
           const runtimeHost = createRuntimeHost(runtimeSurface, boot.runtime_capabilities);
-          const client = new NanobotClient({
+          const client = new NanodeskClient({
             url,
             maxFrameBytes: boot.limits?.transport.max_frame_bytes,
             socketFactory: runtimeHost.socketFactory,
@@ -879,8 +911,10 @@ export default function App() {
               ? bootstrapTokenExpiresAt(boot.expires_in)
               : null,
             modelName: boot.model_name ?? null,
+            siteTitle: boot.site_title ?? null,
             ingressLimits: boot.limits ?? null,
             runtimeSurface,
+            agents: boot.agents ?? null,
           });
         } catch (e) {
           if (cancelled) return;
@@ -1009,6 +1043,8 @@ export default function App() {
         onModelNameChange={handleModelNameChange}
         onLogout={handleLogout}
         onNativeEngineRestart={handleNativeEngineRestart}
+        initialAgents={state.agents}
+        siteTitle={state.siteTitle}
       />
     </ClientProvider>
   );
@@ -1019,11 +1055,15 @@ function Shell({
   onModelNameChange,
   onLogout,
   onNativeEngineRestart,
+  initialAgents,
+  siteTitle: initialSiteTitle,
 }: {
   runtimeSurface: RuntimeSurface;
   onModelNameChange: (modelName: string | null) => void;
   onLogout: () => void;
   onNativeEngineRestart: () => Promise<string>;
+  initialAgents: AgentsPayload | null;
+  siteTitle?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const { client, getToken } = useClient();
@@ -1074,6 +1114,7 @@ function Shell({
   const [pendingDelete, setPendingDelete] = useState<{
     items: SidebarDeleteItem[];
     automations?: SessionAutomationJob[];
+    projectLabel?: string;
   } | null>(null);
   const [pendingRename, setPendingRename] = useState<{
     key: string;
@@ -1103,6 +1144,11 @@ function Shell({
   const skills = useSkills(getToken);
   const pageVisible = usePageVisibility();
   const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsPayload | null>(null);
+  const [agentsPayload, setAgentsPayload] = useState<AgentsPayload | null>(initialAgents);
+  const [draftAgentId, setDraftAgentId] = useState<string | null>(
+    initialRouteRef.current.agentId ?? initialAgents?.default_agent_id ?? null,
+  );
+  const [agentOverrides, setAgentOverrides] = useState<Record<string, string>>({});
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [draftWorkspaceScope, setDraftWorkspaceScope] =
     useState<WorkspaceScopePayload | null>(null);
@@ -1149,9 +1195,9 @@ function Shell({
       setView(route.view);
       setSettingsInitialSection(route.settingsSection);
       setWorkspaceError(null);
-      if (route.view === "chat" && !route.activeKey) {
-        setDraftWorkspaceScope(null);
-      }
+      // Do not clear draftWorkspaceScope here. Navigating to an empty chat is also
+      // how "New topic" in a project group applies a project draft; wiping it on
+      // hashchange races that path and leaves the composer without file mentions.
     };
     window.addEventListener("hashchange", applyRoute);
     return () => window.removeEventListener("hashchange", applyRoute);
@@ -1297,7 +1343,14 @@ function Shell({
     if (activePaneSession?.workspaceScope) {
       return activePaneSession.workspaceScope;
     }
-    return draftWorkspaceScope ?? workspaces?.default_scope ?? null;
+    if (draftWorkspaceScope) {
+      return draftWorkspaceScope;
+    }
+    // Empty new-chat composers still send against the default workspace, so keep
+    // the same scope visible for @ file mentions and workspace controls.
+    return workspaces?.default_scope
+      ? normalizeWorkspaceScope(workspaces.default_scope)
+      : null;
   }, [
     activeChatId,
     activePaneSession?.workspaceScope,
@@ -1307,6 +1360,32 @@ function Shell({
     workspaces?.default_scope,
   ]);
   const activeChatRunning = activeChatId ? runningChatIds.has(activeChatId) : false;
+
+  const agents = agentsPayload?.agents ?? [];
+  const defaultAgentId = agentsPayload?.default_agent_id ?? "default";
+  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+  const agentIdForSession = useCallback((session: ChatSummary | null | undefined) => {
+    if (!session) return null;
+    return agentOverrides[session.chatId] ?? session.agentId ?? defaultAgentId;
+  }, [agentOverrides, defaultAgentId]);
+  const activeAgentId = agentIdForSession(activePaneSession) ?? draftAgentId ?? defaultAgentId;
+  const activeAgent = agentById.get(activeAgentId)
+    ?? agentById.get(defaultAgentId)
+    ?? agents[0]
+    ?? null;
+  const selectedAgentId = draftAgentId ?? activeAgent?.id ?? activeAgentId;
+  const selectedAgent = agentById.get(selectedAgentId)
+    ?? activeAgent
+    ?? agentById.get(defaultAgentId)
+    ?? agents[0]
+    ?? null;
+  const selectAgent = useCallback((agentId: string) => {
+    setDraftAgentId(agentId);
+    navigate({ view: "agents", activeKey, settingsSection: "overview", agentId });
+    setTemporaryChatEnabled(false);
+    setSessionSearchOpen(false);
+    setMobileSidebarOpen(false);
+  }, [activeKey, navigate]);
 
   const refreshWorkspaces = useCallback(async () => {
     try {
@@ -1320,6 +1399,27 @@ function Shell({
   useEffect(() => {
     void refreshWorkspaces();
   }, [refreshWorkspaces]);
+
+  const saveAgentProfile = useCallback(async (action: "create" | "update" | "delete", profile: AgentProfileUpdate) => {
+    const payload = await mutateAgentProfile(client, action, profile);
+    setAgentsPayload(payload);
+    setDraftAgentId((current) => current ?? payload.default_agent_id);
+  }, [client]);
+
+  const refreshAgents = useCallback(async () => {
+    try {
+      const payload = await fetchAgents(getToken());
+      setAgentsPayload(payload);
+      setDraftAgentId((current) => current ?? payload.default_agent_id);
+    } catch {
+      setAgentsPayload(initialAgents);
+    }
+  }, [getToken, initialAgents]);
+
+  useEffect(() => {
+    void refreshAgents();
+  }, [refreshAgents]);
+
 
   useEffect(() => {
     if (loading) return;
@@ -1378,7 +1478,7 @@ function Shell({
   }, [activeKey, loading, navigate, sessions, temporarySessions]);
 
   useEffect(() => {
-    return client.onSessionUpdate((chatId, scope, workspaceScope) => {
+    return client.onSessionUpdate((chatId, scope, workspaceScope, agentId) => {
       if (scope === "thread") {
         setUpdatedChatIds((current) => {
           const next = new Set(current);
@@ -1391,6 +1491,12 @@ function Shell({
             ? current
             : next;
         });
+      }
+      if (agentId) {
+        setAgentOverrides((current) => ({
+          ...current,
+          [chatId]: agentId,
+        }));
       }
       if (!workspaceScope) return;
       const next = normalizeWorkspaceScope(workspaceScope);
@@ -1406,12 +1512,18 @@ function Shell({
 
   useEffect(() => {
     return client.onError((error) => {
-      if (error.kind !== "workspace_scope_rejected") return;
-      if (error.chatId && error.chatId !== activeChatIdRef.current) return;
-      setWorkspaceError(t("errors.workspaceScopeRejected.body"));
-      void refreshWorkspaces();
+      if (error.kind === "workspace_scope_rejected") {
+        if (error.chatId && error.chatId !== activeChatIdRef.current) return;
+        setWorkspaceError(t("errors.workspaceScopeRejected.body"));
+        void refreshWorkspaces();
+        return;
+      }
+      if (error.kind === "agent_rejected") {
+        setWorkspaceError(error.reason || "Agent is unavailable.");
+        void refreshAgents();
+      }
     });
-  }, [client, refreshWorkspaces, t]);
+  }, [client, refreshAgents, refreshWorkspaces, t]);
 
   useEffect(() => {
     if (loading) return;
@@ -1552,10 +1664,14 @@ function Shell({
     [activeChatId, activeChatRunning, activeKey, client, temporaryChatActive],
   );
 
-  const onCreateChat = useCallback(async (workspaceScope?: WorkspaceScopePayload | null) => {
+  const onCreateChat = useCallback(async (
+    workspaceScope?: WorkspaceScopePayload | null,
+    agentIdOverride?: string | null,
+  ) => {
     try {
-      const scope = workspaceScope ?? activeWorkspaceScope;
-      const chatId = await createChat(scope);
+      const scope = workspaceScope ?? activeWorkspaceScope ?? workspaces?.default_scope ?? null;
+      const agentId = agentIdOverride ?? selectedAgent?.id ?? selectedAgentId;
+      const chatId = await createChat(scope, agentId);
       const key = `websocket:${chatId}`;
       pendingCreatedSessionKeyRef.current = key;
       navigate({
@@ -1564,6 +1680,12 @@ function Shell({
         settingsSection: "overview",
       });
       setMobileSidebarOpen(false);
+      if (agentId) {
+        setAgentOverrides((current) => ({
+          ...current,
+          [chatId]: agentId,
+        }));
+      }
       if (scope) {
         setWorkspaceOverrides((current) => ({
           ...current,
@@ -1575,10 +1697,12 @@ function Shell({
       console.error("Failed to create chat", e);
       if (e instanceof Error && e.message.startsWith("workspace_scope_rejected:")) {
         setWorkspaceError(t("errors.workspaceScopeRejected.body"));
+      } else if (e instanceof Error && e.message.startsWith("agent_rejected:")) {
+        setWorkspaceError(e.message.slice("agent_rejected:".length) || t("errors.agentRejected", { defaultValue: "Agent is unavailable." }));
       }
       return null;
     }
-  }, [activeWorkspaceScope, createChat, navigate, t]);
+  }, [activeWorkspaceScope, createChat, navigate, selectedAgent?.id, selectedAgentId, t, workspaces?.default_scope]);
 
   const onCreateTemporaryChat = useCallback(
     async (
@@ -1594,6 +1718,7 @@ function Shell({
         const nextSession: ChatSummary = {
           ...session,
           preview: initialMessage ?? "",
+          agentId: selectedAgent?.id ?? selectedAgentId,
           ...(restrictedScope ? { workspaceScope: restrictedScope } : {}),
         };
         setTemporarySessions((current) => ({
@@ -1647,13 +1772,21 @@ function Shell({
   }, [forkChat, navigate, sessions, sidebarState.title_overrides, t]);
 
   const onNewChat = useCallback(() => {
+    // Keep the current project on the empty composer so @ file mentions stay
+    // available when starting another topic in the same workspace.
+    const scopeToKeep = (
+      !temporaryChatRequested
+      && activeWorkspaceScope?.project_path
+    )
+      ? normalizeWorkspaceScope(activeWorkspaceScope)
+      : null;
     navigate(defaultShellRoute());
     setTemporaryChatEnabled(false);
-    setDraftWorkspaceScope(null);
+    setDraftWorkspaceScope(scopeToKeep);
     setWorkspaceError(null);
     setSessionSearchOpen(false);
     setMobileSidebarOpen(false);
-  }, [navigate]);
+  }, [activeWorkspaceScope, navigate, temporaryChatRequested]);
 
   const onTemporaryChatEnabledChange = useCallback((enabled: boolean) => {
     if (view !== "chat" || activeKey) return;
@@ -1670,8 +1803,23 @@ function Shell({
         onNewChat();
         return;
       }
+      // Starting a topic in a removed folder brings it back to the sidebar.
+      const projectKey = normalizeWorkspacePath(trimmed);
+      void updateSidebarState((current) => (
+        current.hidden_project_keys.some(
+          (item) => normalizeWorkspacePath(item) === projectKey,
+        )
+          ? {
+            ...current,
+            hidden_project_keys: current.hidden_project_keys.filter(
+              (item) => normalizeWorkspacePath(item) !== projectKey,
+            ),
+          }
+          : current
+      ));
+      // Apply the project draft before route changes so the empty composer can
+      // resolve @ file mentions immediately for the same project.
       setTemporaryChatEnabled(false);
-      navigate(defaultShellRoute());
       setDraftWorkspaceScope(normalizeWorkspaceScope({
         project_path: trimmed,
         project_name: projectName || projectNameFromPath(trimmed),
@@ -1679,9 +1827,10 @@ function Shell({
         restrict_to_workspace: base.access_mode === "restricted",
       }));
       setWorkspaceError(null);
+      navigate(defaultShellRoute(), { replace: true });
       setMobileSidebarOpen(false);
     },
-    [activeWorkspaceScope, navigate, onNewChat, workspaces?.default_scope],
+    [activeWorkspaceScope, navigate, onNewChat, updateSidebarState, workspaces?.default_scope],
   );
 
   const onSelectChat = useCallback(
@@ -1905,8 +2054,9 @@ function Shell({
     setSessionSearchOpen(false);
     setCreatingPane(true);
     try {
-      const scope = activeWorkspaceScope;
-      const chatId = await createChat(scope);
+      const scope = activeWorkspaceScope ?? workspaces?.default_scope ?? null;
+      const agentId = activeAgent?.id ?? activeAgentId;
+      const chatId = await createChat(scope, agentId);
       const paneKey = `websocket:${chatId}`;
       pendingCreatedSessionKeyRef.current = paneKey;
       updateWorkbenchState((current) => addWorkbenchPane(current, activeKey, paneKey));
@@ -1915,6 +2065,12 @@ function Shell({
         activeKey: paneKey,
         settingsSection: "overview",
       });
+      if (agentId) {
+        setAgentOverrides((current) => ({
+          ...current,
+          [chatId]: agentId,
+        }));
+      }
       if (scope) {
         setWorkspaceOverrides((current) => ({
           ...current,
@@ -1998,11 +2154,27 @@ function Shell({
     setMobileSidebarOpen(false);
   }, [activeKey, navigate]);
 
+  const onOpenAgents = useCallback(() => {
+    setSessionSearchOpen(false);
+    navigate({ view: "agents", activeKey, settingsSection: "overview", agentId: selectedAgentId });
+    setMobileSidebarOpen(false);
+  }, [activeKey, navigate, selectedAgentId]);
+
   const onOpenSkills = useCallback(() => {
     setSessionSearchOpen(false);
     navigate({ view: "skills", activeKey, settingsSection: "skills" });
     setMobileSidebarOpen(false);
   }, [activeKey, navigate]);
+
+  const onOpenMcp = useCallback(() => {
+    setSessionSearchOpen(false);
+    navigate({ view: "mcp", activeKey, settingsSection: "mcp" });
+    setMobileSidebarOpen(false);
+  }, [activeKey, navigate]);
+
+  const onMcpIntent = useCallback(() => {
+    void loadMcpServersView();
+  }, []);
 
   const onSettingsSectionChange = useCallback(
     (section: SettingsSectionKey) => {
@@ -2184,7 +2356,10 @@ function Shell({
     }
   }, [pendingDelete, deleteChat, activeKey, navigate, topicSessions]);
 
-  const onRequestDeleteMany = useCallback(async (items: SidebarDeleteItem[]) => {
+  const onRequestDeleteMany = useCallback(async (
+    items: SidebarDeleteItem[],
+    options?: { projectLabel?: string },
+  ) => {
     const uniqueItems = Array.from(new Map(items.map((item) => [item.key, item])).values());
     if (uniqueItems.length === 0) return;
     const automationResults = await Promise.allSettled(
@@ -2193,7 +2368,11 @@ function Shell({
     const automations = automationResults.flatMap((result) => (
       result.status === "fulfilled" ? result.value : []
     ));
-    setPendingDelete({ items: uniqueItems, automations });
+    setPendingDelete({
+      items: uniqueItems,
+      automations,
+      ...(options?.projectLabel ? { projectLabel: options.projectLabel } : {}),
+    });
   }, [getSessionAutomations]);
 
   const onRequestDelete = useCallback((key: string, label: string) => {
@@ -2249,6 +2428,42 @@ function Shell({
     || session.title
     || deriveTitle(session.preview, t("chat.newChat"))
   ), [sidebarState.title_overrides, t]);
+
+  /** Hide a project folder in the sidebar; its topics stay available as plain topics. */
+  const onRequestRemoveProject = useCallback((projectKey: string) => {
+    if (!projectKey.trim()) return;
+    const key = normalizeWorkspacePath(projectKey);
+    void updateSidebarState((current) => (
+      current.hidden_project_keys.includes(key)
+        ? current
+        : { ...current, hidden_project_keys: [...current.hidden_project_keys, key] }
+    ));
+  }, [updateSidebarState]);
+
+  const onRestoreProject = useCallback((projectKey: string) => {
+    if (!projectKey.trim()) return;
+    const key = normalizeWorkspacePath(projectKey);
+    void updateSidebarState((current) => ({
+      ...current,
+      hidden_project_keys: current.hidden_project_keys.filter(
+        (item) => normalizeWorkspacePath(item) !== key,
+      ),
+    }));
+  }, [updateSidebarState]);
+
+  /** Delete every topic that belongs to a project folder, after confirmation. */
+  const onRequestDeleteProject = useCallback((projectKey: string, label: string) => {
+    if (!projectKey.trim()) return;
+    const key = normalizeWorkspacePath(projectKey);
+    const items = sessions
+      .filter((session) => (
+        Boolean(session.workspaceScope?.project_path)
+        && normalizeWorkspacePath(session.workspaceScope?.project_path) === key
+      ))
+      .map((session) => ({ key: session.key, label: titleForSession(session) }));
+    if (items.length === 0) return;
+    void onRequestDeleteMany(items, { projectLabel: label });
+  }, [onRequestDeleteMany, sessions, titleForSession]);
 
   const automaticSidebarSort = sidebarState.view.sort === "manual"
     ? "updated_desc"
@@ -2459,34 +2674,33 @@ function Shell({
   }, [updateWorkbenchState]);
 
   useEffect(() => {
+    const brand = (initialSiteTitle ?? "").trim() || "NanoDesk";
     if (view === "settings") {
-      document.title = t("app.documentTitle.chat", {
-        title: t("settings.sidebar.title"),
-      });
+      document.title = `${t("settings.sidebar.title")} · ${brand}`;
       return;
     }
     if (view === "apps") {
-      document.title = t("app.documentTitle.chat", {
-        title: t("settings.nav.apps", { defaultValue: "Apps" }),
-      });
+      document.title = `${t("settings.nav.apps", { defaultValue: "Apps" })} · ${brand}`;
       return;
     }
     if (view === "automations") {
-      document.title = t("app.documentTitle.chat", {
-        title: t("settings.nav.automations", { defaultValue: "Automations" }),
-      });
+      document.title = `${t("settings.nav.automations", { defaultValue: "Automations" })} · ${brand}`;
       return;
     }
     if (view === "skills") {
-      document.title = t("app.documentTitle.chat", {
-        title: t("settings.nav.skills", { defaultValue: "Skills" }),
-      });
+      document.title = `${t("settings.nav.skills", { defaultValue: "Skills" })} · ${brand}`;
       return;
     }
-    document.title = activeSession
-      ? t("app.documentTitle.chat", { title: headerTitle })
-      : t("app.documentTitle.base");
-  }, [activeSession, headerTitle, i18n.resolvedLanguage, t, view]);
+    if (view === "mcp") {
+      document.title = `${t("sidebar.mcp", { defaultValue: "MCP Server" })} · ${brand}`;
+      return;
+    }
+    if (view === "agents") {
+      document.title = `${t("sidebar.agents", { defaultValue: "Agents" })} · ${brand}`;
+      return;
+    }
+    document.title = activeSession ? `${headerTitle} · ${brand}` : brand;
+  }, [activeSession, headerTitle, i18n.resolvedLanguage, initialSiteTitle, t, view]);
 
   const pinnedPaneKeys = useMemo(
     () => new Set(sidebarState.pinned_keys),
@@ -2534,13 +2748,19 @@ function Shell({
     onToggleGroup,
     onRequestRenameProject,
     onNewChatInProject,
+    onRequestRemoveProject,
+    onRequestDeleteProject,
+    onRestoreProject,
     onOpenSettings,
     onOpenApps,
     onOpenAutomations,
+    onOpenAgents,
     onOpenSkills,
+    onOpenMcp,
+    onMcpIntent,
     onSettingsIntent,
     onOpenSearch: onOpenSessionSearch,
-    activeUtility: view === "apps" || view === "automations" || view === "skills" ? view : null,
+    activeUtility: view === "apps" || view === "automations" || view === "skills" || view === "agents" || view === "mcp" ? view : null,
     onToggleArchived,
     pinnedKeys: sidebarPinnedTabKeys,
     archivedKeys: sidebarArchivedTabKeys,
@@ -2549,6 +2769,7 @@ function Shell({
     sessionOrder: sidebarState.session_order,
     titleOverrides: sidebarState.title_overrides,
     projectNameOverrides: sidebarState.project_name_overrides,
+    hiddenProjectKeys: sidebarState.hidden_project_keys,
     collapsedGroups: sidebarState.collapsed_groups,
     runningChatIds: runningChatIdList,
     updatedChatIds: updatedChatIdList,
@@ -2556,6 +2777,7 @@ function Shell({
     showArchived: sidebarState.view.show_archived,
     archivedCount: sidebarArchivedTabKeys.length,
     defaultWorkspacePath: workspaces?.default_scope.project_path ?? null,
+    siteTitle: (initialSiteTitle ?? "").trim() || null,
   };
   const hostSidebarCollapsed = showHostChrome && !hostSidebarOpen;
   const showHostSidebarPreview =
@@ -2758,7 +2980,9 @@ function Shell({
                         onToggleSidebar={toggleSidebar}
                         onNewChat={onNewChat}
                         onCreateChat={
-                          temporaryChatEnabled ? onCreateTemporaryChat : onCreateChat
+                          temporaryChatEnabled
+                            ? onCreateTemporaryChat
+                            : (scope) => onCreateChat(scope)
                         }
                         onForkChat={temporaryChatActive ? undefined : onForkChat}
                         onTurnEnd={onTurnEnd}
@@ -2776,6 +3000,7 @@ function Shell({
                         settingsSnapshot={settingsSnapshot}
                         onOpenModelSettings={onOpenModelSettings}
                         skills={skills}
+                        agent={activeAgent}
                       />
                     );
                   }
@@ -2796,7 +3021,7 @@ function Shell({
                       title={pane.title}
                       onToggleSidebar={toggleSidebar}
                       onNewChat={onNewChat}
-                      onCreateChat={onCreateChat}
+                      onCreateChat={(scope) => onCreateChat(scope)}
                       onForkChat={onForkChat}
                       onTurnEnd={context.active ? onTurnEnd : () => void refresh()}
                       theme={theme}
@@ -2833,12 +3058,39 @@ function Shell({
                       settingsSnapshot={settingsSnapshot}
                       onOpenModelSettings={onOpenModelSettings}
                       skills={skills}
+                      agent={agentById.get(agentIdForSession(paneSession) ?? "") ?? null}
                     />
                   );
                 }}
               />
             </div>
-            {view !== "chat" && (
+            {view === "agents" && (
+              <div className="absolute inset-0 flex flex-col">
+                <AgentWorkbenchView
+                  agents={agents}
+                  selectedAgentId={selectedAgent?.id ?? selectedAgentId}
+                  onSelectAgent={selectAgent}
+                  onStartChat={() => void onCreateChat(null, selectedAgent?.id ?? selectedAgentId)}
+                  onRefresh={() => void refreshAgents()}
+                  onSave={saveAgentProfile}
+                  modelPresets={settingsSnapshot?.model_presets ?? []}
+                  skillCatalog={agentsPayload?.skill_catalog ?? []}
+                />
+              </div>
+            )}
+            {view === "mcp" && (
+              <div className="absolute inset-0 flex flex-col">
+                <Suspense fallback={<SurfaceLoadingFallback />}>
+                  <McpServersView
+                    onBackToChat={onBackToChat}
+                    onRestart={onRestart}
+                    isRestarting={isRestarting}
+                    hostChromeInset={showHostChrome}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {view !== "chat" && view !== "agents" && view !== "mcp" && (
               <div className="absolute inset-0 flex flex-col">
                 <Suspense fallback={<SurfaceLoadingFallback />}>
                   <SettingsView
@@ -2871,6 +3123,18 @@ function Shell({
               title={pendingDelete.items[0]?.label ?? ""}
               count={pendingDelete.items.length}
               automations={pendingDelete.automations}
+              heading={pendingDelete.projectLabel
+                ? t("deleteConfirm.projectTitle", {
+                    count: pendingDelete.items.length,
+                    project: pendingDelete.projectLabel,
+                    defaultValue: "Delete {{count}} topics in {{project}}?",
+                  })
+                : undefined}
+              description={pendingDelete.projectLabel
+                ? t("deleteConfirm.projectDescription", {
+                    defaultValue: "The project disappears from the sidebar as well. This action cannot be undone.",
+                  })
+                : undefined}
               onCancel={() => setPendingDelete(null)}
               onConfirm={onConfirmDelete}
             />

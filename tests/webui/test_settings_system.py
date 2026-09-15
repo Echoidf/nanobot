@@ -3,6 +3,7 @@ from __future__ import annotations
 from nanobot.config.schema import Config
 from nanobot.webui.settings_system import (
     coerce_channel_value,
+    runtime_tools_payload,
     system_settings_payload,
     update_agent_system_settings,
 )
@@ -42,3 +43,70 @@ def test_system_domain_validates_channel_field_values() -> None:
     ]
     assert coerce_channel_value("enabled", "yes", "bool") is True
     assert coerce_channel_value("port", "8765", "int") == 8765
+
+
+def test_runtime_tools_payload_groups_registered_tools() -> None:
+    config = Config()
+    config.tools.restrict_to_workspace = True
+
+    payload = runtime_tools_payload(
+        config,
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Target path"},
+                        },
+                        "required": ["path"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp_linear_search",
+                    "description": "Search Linear",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "limit": {"type": "integer"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "my",
+                    "description": "Recall identity",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ],
+    )
+
+    assert payload["restrict_to_workspace"] is True
+    assert payload["counts"] == {"builtin": 1, "mcp": 1, "runtime": 1, "total": 3}
+    assert [tool["name"] for tool in payload["tools"]] == [
+        "read_file",
+        "mcp_linear_search",
+        "my",
+    ]
+    assert payload["tools"][0]["category"] == "filesystem"
+    assert payload["tools"][1]["category"] == "mcp"
+    assert payload["tools"][2]["source"] == "runtime"
+    assert payload["tools"][0]["parameters"] == [
+        {
+            "name": "path",
+            "type": "string",
+            "required": True,
+            "description": "Target path",
+        }
+    ]

@@ -9,7 +9,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="nanobot web UI — chat with your nanobot workspace."
+      content="AI workspace for chat, tools, and automation."
       data-i18n-meta="description"
     />
     <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" />
@@ -17,10 +17,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="nanobot" />
-    <link rel="icon" type="image/svg+xml" href="/brand/nanobot_mark.svg" />
-    <link rel="alternate icon" type="image/png" sizes="32x32" href="/brand/nanobot_favicon_32.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/brand/nanobot_apple_touch.png" />
+    <meta name="apple-mobile-web-app-title" content="NanoDesk" />
     <link rel="manifest" href="/manifest.json" />
     <style>
       html,
@@ -96,7 +93,7 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("nanobot-webui.theme");
+          var stored = localStorage.getItem("nanodesk-webui.theme");
           var dark =
             stored === "dark" ||
             (!stored &&
@@ -106,28 +103,29 @@
         } catch {}
       })();
     </script>
-    <title>nanobot</title>
+    <link rel="icon" type="image/svg+xml" href="/brand/nanodesk_favicon.svg" />
+    <title>NanoDesk</title>
   </head>
   <body class="bg-background text-foreground antialiased">
     <div id="root">
       <div class="boot-splash">
         <div class="boot-splash-inner">
           <span class="boot-dot" aria-hidden="true"></span>
-          <span data-boot-copy>Loading nanobot…</span>
+          <span data-boot-copy>Loading workspace…</span>
         </div>
       </div>
     </div>
     <script>
       (function () {
-        var localeKey = "nanobot.locale";
+        var localeKey = "nanodesk.locale";
         var copy = {
           en: {
-            boot: "Loading nanobot…",
-            description: "nanobot web UI — chat with your nanobot workspace."
+            boot: "Loading workspace…",
+            description: "AI workspace for chat, tools, and automation."
           },
           "zh-CN": {
-            boot: "正在加载 nanobot…",
-            description: "nanobot Web UI —— 与你的 nanobot 工作区对话。"
+            boot: "正在加载工作区…",
+            description: "用于聊天、工具和自动任务的 AI 工作区。"
           }
         };
 

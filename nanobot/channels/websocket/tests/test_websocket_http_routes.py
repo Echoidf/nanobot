@@ -83,6 +83,7 @@ def _make_handler(
     channel_feature_action: Any | None = None,
     channel_runtime_status: Any | None = None,
     mcp_reload: Any | None = None,
+    tool_definitions: Any | None = None,
 ) -> GatewayServices:
     config = WebSocketConfig.model_validate(cfg) if isinstance(cfg, dict) else cfg
     workspace = workspace_path or Path.cwd()
@@ -103,6 +104,7 @@ def _make_handler(
         channel_feature_action=channel_feature_action,
         channel_runtime_status=channel_runtime_status,
         mcp_reload=mcp_reload,
+        tool_definitions=tool_definitions,
     )
 
 
@@ -121,6 +123,7 @@ def _ch(
     channel_feature_action: Any | None = None,
     channel_runtime_status: Any | None = None,
     mcp_reload: Any | None = None,
+    tool_definitions: Any | None = None,
     **extra: Any,
 ) -> WebSocketChannel:
     cfg: dict[str, Any] = {
@@ -145,6 +148,7 @@ def _ch(
         channel_feature_action=channel_feature_action,
         channel_runtime_status=channel_runtime_status,
         mcp_reload=mcp_reload,
+        tool_definitions=tool_definitions,
     )
     return InProcessHttpChannel(cfg, bus, gateway=gateway)
 
@@ -896,7 +900,7 @@ async def test_webui_skill_install_rejects_overlapping_requests(
 
 
 @pytest.mark.asyncio
-async def test_webui_local_skill_import_is_local_only(
+async def test_webui_local_skill_import_works_for_remote_clients(
     bus: MagicMock,
     tmp_path: Path,
 ) -> None:
@@ -913,20 +917,34 @@ async def test_webui_local_skill_import_is_local_only(
         workspace_path=tmp_path,
         port=_free_port(),
     )
+    token = channel.gateway.tokens.issue_api_token(300)
 
-    denied = await _webui_mutate(
-        channel,
-        "skill.import_local",
-        {"source_path": str(source), "names": ["local-demo"]},
-        connection=_REMOTE,
+    listed = await channel.gateway.http.dispatch(
+        _REMOTE,
+        _FakeReq(
+            {
+                "Host": "nanobot.example",
+                "Authorization": f"Bearer {token}",
+            },
+            path=f"/api/webui/skills/local?path={source}",
+        ),
     )
-    assert denied.status_code == 403
-    assert "remote local-skill import is disabled" in denied.text
+    assert listed is not None
+    assert listed.status_code == 200
+    listed_body = json.loads(listed.body.decode())
+    assert listed_body["skills"] == [
+        {
+            "name": "local-demo",
+            "description": "Local demo skill.",
+            "already_imported": False,
+        }
+    ]
 
     imported = await _webui_mutate(
         channel,
         "skill.import_local",
         {"source_path": str(source), "names": ["local-demo"]},
+        connection=_REMOTE,
     )
     assert imported.status_code == 200
     assert imported.json()["last_action"]["imported"] == ["local-demo"]
@@ -1078,6 +1096,68 @@ async def test_cli_apps_routes_require_token_and_return_payload(
         )
         assert installed.status_code == 200
         assert installed.json()["last_action"]["message"] == "install:gimp"
+    finally:
+        await channel.stop()
+        await server_task
+
+
+@pytest.mark.asyncio
+async def test_runtime_tools_route_requires_token_and_returns_catalog(
+    bus: MagicMock,
+    tmp_path: Path,
+) -> None:
+    channel = _ch(
+        bus,
+        session_manager=_seed_session(tmp_path),
+        port=29915,
+        tool_definitions=lambda: [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                        },
+                        "required": ["path"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp_linear_search",
+                    "description": "Search Linear",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+        ],
+    )
+    server_task = asyncio.create_task(channel.start())
+    try:
+        deny = await _http_get("http://127.0.0.1:29915/api/settings/runtime-tools")
+        assert deny.status_code == 401
+
+        token = channel.gateway.tokens.issue_api_token(300)
+        auth = {"Authorization": f"Bearer {token}"}
+        response = await _http_get(
+            "http://127.0.0.1:29915/api/settings/runtime-tools",
+            headers=auth,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["counts"] == {"builtin": 1, "mcp": 1, "runtime": 0, "total": 2}
+        assert [tool["name"] for tool in body["tools"]] == ["read_file", "mcp_linear_search"]
+        assert body["tools"][0]["category"] == "filesystem"
+        assert body["tools"][1]["source"] == "mcp"
     finally:
         await channel.stop()
         await server_task
@@ -2306,12 +2386,14 @@ async def test_webui_sidebar_state_routes_are_config_dir_scoped(
         assert initial.status_code == 200
         assert initial.json()["schema_version"] == 1
         assert initial.json()["pinned_keys"] == []
+        assert initial.json()["hidden_project_keys"] == []
 
         payload = {
             "pinned_keys": ["websocket:sidebar"],
             "archived_keys": ["websocket:old"],
             "session_order": ["websocket:old", "websocket:sidebar"],
             "title_overrides": {"websocket:sidebar": "Pinned work"},
+            "hidden_project_keys": ["/Users/me/alpha"],
             "view": {"density": "compact", "show_archived": True},
         }
         updated = await _webui_mutate(
@@ -2324,6 +2406,7 @@ async def test_webui_sidebar_state_routes_are_config_dir_scoped(
         assert body["pinned_keys"] == ["websocket:sidebar"]
         assert body["session_order"] == ["websocket:old", "websocket:sidebar"]
         assert body["title_overrides"] == {"websocket:sidebar": "Pinned work"}
+        assert body["hidden_project_keys"] == ["/Users/me/alpha"]
         assert body["view"]["density"] == "compact"
 
         state_path = tmp_path / "webui" / "sidebar-state.json"

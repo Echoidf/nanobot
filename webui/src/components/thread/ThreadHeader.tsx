@@ -11,11 +11,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { SessionHandle } from "@/lib/types";
+import { AgentIcon } from "@/lib/agent-icon";
+import { agentDescription } from "@/lib/agent-copy";
+import type { AgentProfilePayload, SessionHandle } from "@/lib/types";
 
 interface ThreadHeaderProps {
   title: string;
   handle?: SessionHandle | null;
+  agent?: AgentProfilePayload | null;
   onToggleSidebar: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
@@ -36,6 +39,7 @@ interface ThreadHeaderProps {
 export function ThreadHeader({
   title,
   handle = null,
+  agent = null,
   onToggleSidebar,
   theme,
   onToggleTheme,
@@ -58,7 +62,7 @@ export function ThreadHeader({
     <div
       data-testid="thread-header"
       className={cn(
-        "relative z-30 flex items-center justify-between gap-3 px-3 py-2",
+        "relative z-30 flex items-center justify-between gap-3 border-b border-border/45 bg-background/75 px-3 py-2 backdrop-blur-md",
         minimal && "h-11",
         !minimal && hostChromeTitleInset && "lg:pl-[128px]",
       )}
@@ -79,9 +83,20 @@ export function ThreadHeader({
           </Button>
         ) : null}
         {!minimal && !hideTitle ? (
-          <div className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[12px] font-medium text-muted-foreground">
+          <div className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[13px] font-medium text-foreground/80">
             <span className="max-w-[min(60vw,32rem)] truncate">{title}</span>
           </div>
+        ) : null}
+        {agent ? (
+          <span
+            className="flex max-w-[10rem] shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-medium text-muted-foreground"
+            title={agentDescription(agent, t)}
+          >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[13px]">
+              <AgentIcon icon={agent.icon} imageClassName="h-3.5 w-3.5 rounded-[3px]" fallbackClassName="h-3.5 w-3.5" />
+            </span>
+            <span className="truncate">{agent.name}</span>
+          </span>
         ) : null}
         {handle ? (
           <span

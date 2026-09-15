@@ -77,8 +77,8 @@ export type ChannelConfigOption = {
   label: string;
 };
 
-const NANOBOT_DOCS_URL = "https://nanobot.wiki/docs/latest";
-const CHAT_APPS_DOCS_URL = `${NANOBOT_DOCS_URL}/getting-started/chat-apps`;
+const NANODESK_DOCS_URL = "https://nanodesk.wiki/docs/latest";
+const CHAT_APPS_DOCS_URL = `${NANODESK_DOCS_URL}/getting-started/chat-apps`;
 
 export function chatAppGuideUrl(sectionId: string): string {
   return `${CHAT_APPS_DOCS_URL}#${sectionId}`;

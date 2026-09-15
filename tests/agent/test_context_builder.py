@@ -413,8 +413,9 @@ class TestBuildMessages:
         user_prompt = messages[-1]["content"]
         assert system_prompt == plain_messages[0]["content"]
         assert "Follow the unique review checklist." not in system_prompt
-        assert "Please $review this patch" in user_prompt
-        assert "[Active Skills — instructions for this user turn]" in user_prompt
+        assert "Please this patch" in user_prompt
+        assert "$review" not in user_prompt
+        assert "[Active Skills — instructions for this user turn]" not in user_prompt
         assert "### Skill: review" in user_prompt
         assert "Follow the unique review checklist." in user_prompt
         assert user_prompt.count("### Skill: review") == 1
@@ -426,6 +427,55 @@ class TestBuildMessages:
         messages = _builder(tmp_path).build_messages([], "Keep the shell literal $HOME.")
 
         assert "# Active Skills" not in messages[0]["content"]
+
+    def test_workspace_specific_explicit_skill_reference_uses_effective_workspace(self, tmp_path):
+        other_workspace = tmp_path / "project-beta"
+        skill_dir = other_workspace / "skills" / "modlens"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: modlens\n"
+            "description: Inspect images.\n"
+            "---\n\n"
+            "# Modlens workflow\n\nUse the project-beta skill instructions.",
+            encoding="utf-8",
+        )
+        builder = _builder(tmp_path)
+
+        messages = builder.build_messages(
+            [],
+            "Please $modlens this screenshot.",
+            workspace=other_workspace,
+        )
+
+        user_prompt = messages[-1]["content"]
+        assert "### Skill: modlens" in user_prompt
+        assert "Use the project-beta skill instructions." in user_prompt
+
+    def test_default_workspace_skill_is_available_from_effective_workspace(self, tmp_path):
+        default_skill = tmp_path / "skills" / "modlens"
+        default_skill.mkdir(parents=True)
+        (default_skill / "SKILL.md").write_text(
+            "---\n"
+            "name: modlens\n"
+            "description: Inspect images.\n"
+            "---\n\n"
+            "# Modlens workflow\n\nUse the default workspace skill instructions.",
+            encoding="utf-8",
+        )
+        project_workspace = tmp_path / "project-beta"
+        project_workspace.mkdir()
+        builder = _builder(tmp_path)
+
+        messages = builder.build_messages(
+            [],
+            "Please $modlens this screenshot.",
+            workspace=project_workspace,
+        )
+
+        user_prompt = messages[-1]["content"]
+        assert "### Skill: modlens" in user_prompt
+        assert "Use the default workspace skill instructions." in user_prompt
 
     def test_runtime_context_is_not_injected_by_default(self, tmp_path):
         builder = _builder(tmp_path)

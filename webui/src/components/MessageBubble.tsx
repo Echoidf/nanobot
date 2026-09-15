@@ -191,6 +191,11 @@ function deliveryErrorCopy(
         title: t("errors.workspaceScopeRejected.title"),
         body: t("errors.workspaceScopeRejected.body"),
       };
+    case "agent_rejected":
+      return {
+        title: "Agent unavailable",
+        body: "Choose another agent or fix its configured skills and tools.",
+      };
     case "turn_rejected":
     case undefined:
       return {
@@ -399,6 +404,7 @@ export function MessageBubble({
             label={t("thread.composer.quotedContext")}
           />
         ) : null}
+        {message.pathRefs?.length ? <PathRefsChip refs={message.pathRefs} /> : null}
         {hasText ? (
           <p
             data-temporary-message={temporary ? "true" : undefined}
@@ -566,6 +572,13 @@ export function MessageBubble({
       ) : null}
     </div>
   );
+}
+
+function PathRefsChip({ refs }: { refs: Array<{ path: string; kind: "file" | "folder" }> }) {
+  const files = refs.filter((ref) => ref.kind === "file").length;
+  const folders = refs.length - files;
+  const label = `引用 ${files} 个文件${folders ? `，${folders} 个文件夹` : ""}`;
+  return <span className="inline-flex max-w-full items-center rounded-control border border-border/60 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground" title={refs.map((ref) => ref.path).join("\n")}>{label}</span>;
 }
 
 function UserQuotedContext({ text, label }: { text: string; label: string }) {

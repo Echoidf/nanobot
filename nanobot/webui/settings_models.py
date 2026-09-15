@@ -58,6 +58,7 @@ class ModelSettingsOperations:
     create_model: SettingsOperation
     update_model: SettingsOperation
     delete_model: SettingsOperation
+    delete_provider: SettingsOperation
     migrate_models: SettingsOperation
     update_call_order: SettingsOperation
     update_provider: SettingsOperation
@@ -1342,6 +1343,54 @@ def delete_model_configuration(config: Config, query: QueryParams) -> None:
     del config.model_presets[name]
 
 
+def delete_provider_settings(
+    config: Config,
+    query: QueryParams,
+) -> tuple[bool, bool]:
+    """Delete (custom) or reset (built-in) a provider configuration.
+
+    Returns (changed, restart_required).
+    """
+    provider_name = (query_first(query, "provider") or "").strip()
+    if not provider_name:
+        raise WebUISettingsError("provider is required")
+
+    resolved = resolve_settings_provider(config, provider_name)
+    if resolved is None:
+        raise WebUISettingsError("unknown provider")
+    spec, provider_key, provider_config = resolved
+
+    # Refuse to delete a provider still referenced by model presets / defaults.
+    referenced_presets = [
+        name
+        for name, preset in config.model_presets.items()
+        if preset.provider == provider_key
+    ]
+    defaults = config.agents.defaults
+    if defaults.provider == provider_key:
+        referenced_presets.insert(0, "defaults")
+    if referenced_presets:
+        raise WebUISettingsError(
+            "remove the provider from model configuration(s) first",
+            status=409,
+        )
+
+    if find_by_name(provider_key) is not None:
+        # Built-in provider: reset to default (unconfigured).
+        setattr(config.providers, provider_key, type(provider_config)())
+    else:
+        # Custom provider: remove from model_extra entirely.
+        delattr(config.providers, provider_key)
+
+    image_config = config.tools.image_generation
+    restart_required = (
+        image_config.enabled
+        and image_config.provider == provider_key
+        and get_image_gen_provider(provider_key) is not None
+    )
+    return True, restart_required
+
+
 def create_provider_settings(config: Config, query: QueryParams) -> str:
     display_name = (query_first_alias(query, "name", "displayName") or "").strip()
     if not display_name:
@@ -1682,6 +1731,7 @@ class ModelSettingsHandler:
                 "models-migrate": operations.migrate_models,
                 "call-order-update": operations.update_call_order,
                 "provider-create": operations.create_provider,
+                "provider-delete": operations.delete_provider,
             }.get(action)
             if mutation is not None:
                 payload = self.settings.mutate(mutation, request.query)

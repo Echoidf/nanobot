@@ -294,7 +294,15 @@ def issue_route_secret_matches(headers: Any, configured_secret: str) -> bool:
     if authorization and authorization.lower().startswith("bearer "):
         supplied = authorization[7:].strip()
         return hmac.compare_digest(supplied, configured_secret)
-    header_token = headers.get("X-Nanobot-Auth") or headers.get("x-nanobot-auth")
+    # The WebUI sends this credential as a custom header. Accept both the
+    # current ``X-Nanodesk-Auth`` name and the legacy ``X-Nanobot-Auth`` name
+    # so already-built bundles and older clients keep working.
+    header_token = (
+        headers.get("X-Nanodesk-Auth")
+        or headers.get("x-nanodesk-auth")
+        or headers.get("X-Nanobot-Auth")
+        or headers.get("x-nanobot-auth")
+    )
     if not header_token:
         return False
     return hmac.compare_digest(header_token.strip(), configured_secret)

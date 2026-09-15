@@ -673,7 +673,79 @@ async def test_execute_handles_generic_exception() -> None:
 
     result = await wrapper.execute()
 
-    assert result == "(MCP tool call failed: RuntimeError)"
+    assert result == "(MCP tool call failed: RuntimeError: boom)"
+    assert is_tool_error_result(result)
+
+
+def test_describe_mcp_exception_names_connection_refused_reason() -> None:
+    """A refused socket must reach the UI as a named reason, not a bare class."""
+    from nanobot.agent.tools.mcp import _describe_mcp_exception
+
+    assert _describe_mcp_exception(ConnectionRefusedError("Connection refused")) == (
+        "ConnectionRefusedError: Connection refused"
+    )
+
+
+def test_describe_mcp_exception_falls_back_to_class_name() -> None:
+    from nanobot.agent.tools.mcp import _describe_mcp_exception
+
+    assert _describe_mcp_exception(RuntimeError("")) == "RuntimeError"
+
+
+def test_describe_mcp_exception_scrubs_url_credentials() -> None:
+    from nanobot.agent.tools.mcp import _describe_mcp_exception
+
+    described = _describe_mcp_exception(
+        RuntimeError("POST https://user:***@mcp.example.com/mcp failed")
+    )
+
+    assert "hunter2" not in described
+    assert "mcp.example.com" in described
+
+
+@pytest.mark.asyncio
+async def test_execute_surfaces_failure_reason_after_transient_retry() -> None:
+    """Transient failures retry once, then still report the concrete reason."""
+    calls = 0
+
+    async def call_tool(_name: str, arguments: dict) -> object:
+        nonlocal calls
+        calls += 1
+        raise ConnectionRefusedError(61, "Connection refused")
+
+    async def _instant_sleep(_delay: float) -> None:
+        return None
+
+    wrapper = _make_wrapper(SimpleNamespace(call_tool=call_tool))
+    original_sleep = mcp_mod.asyncio.sleep
+    mcp_mod.asyncio.sleep = _instant_sleep
+    try:
+        result = await wrapper.execute()
+    finally:
+        mcp_mod.asyncio.sleep = original_sleep
+
+    assert calls == 2
+    assert "failed after retry" in result
+    assert "Connection refused" in result
+    assert is_tool_error_result(result)
+
+
+@pytest.mark.asyncio
+async def test_execute_scrubs_credentials_from_failure_detail() -> None:
+    """Transport errors embed request URLs; secrets must not reach model context."""
+
+    async def call_tool(_name: str, arguments: dict) -> object:
+        raise RuntimeError(
+            "POST https://user:hunter2@mcp.example.com/mcp?token=*** failed"
+        )
+
+    wrapper = _make_wrapper(SimpleNamespace(call_tool=call_tool))
+
+    result = await wrapper.execute()
+
+    assert "hunter2" not in result
+    assert "abcdef123456" not in result
+    assert "mcp.example.com" in result
     assert is_tool_error_result(result)
 
 

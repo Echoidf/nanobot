@@ -189,7 +189,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
-  Reflect.deleteProperty(window, "nanobotHost");
+  Reflect.deleteProperty(window, "nanodeskHost");
   if (ORIGINAL_MEDIA_DEVICES) {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -469,7 +469,7 @@ describe("ThreadComposer", () => {
     expect(input.className).toContain("pt-[27px]");
     fireEvent.change(input, { target: { value: "1" } });
     expect(input.className).toContain("pt-[27px]");
-    expect(input.parentElement?.parentElement?.className).toContain("max-w-[58rem]");
+    expect(input.parentElement?.parentElement?.className).toContain("max-w-[52rem]");
   });
 
   it("defers textarea autosizing until IME composition commits", () => {
@@ -561,7 +561,7 @@ describe("ThreadComposer", () => {
 
     await user.click(badge);
 
-    expect(screen.getByText("Applies to this chat. Automatic fallback remains enabled.")).toBeInTheDocument();
+    expect(screen.getByText("Auto uses fallback; a manual selection only uses that model.")).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /kimi/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /dflash/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /dspro/i })).toBeInTheDocument();
@@ -1027,7 +1027,7 @@ describe("ThreadComposer", () => {
     const user = userEvent.setup();
     const onWorkspaceScopeChange = vi.fn();
     const defaultScope = {
-      project_path: "/Users/test/.nanobot/workspace",
+      project_path: "/Users/test/.nanodesk/workspace",
       project_name: "workspace",
       access_mode: "restricted" as const,
       restrict_to_workspace: true,
@@ -1086,9 +1086,9 @@ describe("ThreadComposer", () => {
   });
 
   it.each([
-    ["Windows", "D:\\Users\\test\\.nanobot\\workspace", "D:\\path\\to\\project"],
-    ["macOS", "/Users/test/.nanobot/workspace", "/Users/name/project"],
-    ["Linux", "/home/test/.nanobot/workspace", "/home/name/project"],
+    ["Windows", "D:\\Users\\test\\.nanodesk\\workspace", "D:\\path\\to\\project"],
+    ["macOS", "/Users/test/.nanodesk/workspace", "/Users/name/project"],
+    ["Linux", "/home/test/.nanodesk/workspace", "/home/name/project"],
   ])("uses a %s path example for the project picker", async (_, projectPath, placeholder) => {
     const user = userEvent.setup();
     const defaultScope = {
@@ -1115,9 +1115,55 @@ describe("ThreadComposer", () => {
     expect(await screen.findByLabelText("Paste path")).toHaveAttribute("placeholder", placeholder);
   });
 
+  it("shows the selected project name in the thread composer", () => {
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Ask anything..."
+        workspaceScope={{
+          project_path: "/Users/test/project-alpha",
+          project_name: "project-alpha",
+          access_mode: "full",
+          restrict_to_workspace: false,
+        }}
+        workspaceDefaultScope={{
+          project_path: "/Users/test/.nanodesk/workspace",
+          project_name: "workspace",
+          access_mode: "full",
+          restrict_to_workspace: false,
+        }}
+        workspaceControls={{ can_change_project: true, can_use_full_access: true }}
+        onWorkspaceScopeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Choose project" })).toHaveTextContent("project-alpha");
+  });
+
+  it("shows the project placeholder when no workspace is selected", () => {
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Ask anything..."
+        variant="hero"
+        workspaceScope={null}
+        workspaceDefaultScope={{
+          project_path: "/Users/test/.nanodesk/workspace",
+          project_name: "workspace",
+          access_mode: "full",
+          restrict_to_workspace: false,
+        }}
+        workspaceControls={{ can_change_project: true, can_use_full_access: true }}
+        onWorkspaceScopeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Choose project" })).toHaveTextContent("Select project");
+  });
+
   it("slides project controls closed without offering a compact replacement", () => {
     const defaultScope = {
-      project_path: "/Users/test/.nanobot/workspace",
+      project_path: "/Users/test/.nanodesk/workspace",
       project_name: "workspace",
       access_mode: "full" as const,
       restrict_to_workspace: false,
@@ -1168,12 +1214,12 @@ describe("ThreadComposer", () => {
     const onWorkspaceScopeChange = vi.fn();
     const pickFolder = vi.fn().mockResolvedValue("/Users/test/native-project");
     const defaultScope = {
-      project_path: "/Users/test/.nanobot/workspace",
+      project_path: "/Users/test/.nanodesk/workspace",
       project_name: "workspace",
       access_mode: "full" as const,
       restrict_to_workspace: false,
     };
-    Object.defineProperty(window, "nanobotHost", {
+    Object.defineProperty(window, "nanodeskHost", {
       configurable: true,
       value: {
         getRuntimeInfo: vi.fn(),
@@ -1212,7 +1258,7 @@ describe("ThreadComposer", () => {
     const onWorkspaceScopeChange = vi.fn();
     const pickFolder = vi.fn().mockResolvedValue("/Users/test/gateway-project");
     const defaultScope = {
-      project_path: "/Users/test/.nanobot/workspace",
+      project_path: "/Users/test/.nanodesk/workspace",
       project_name: "workspace",
       access_mode: "full" as const,
       restrict_to_workspace: false,
@@ -1250,7 +1296,7 @@ describe("ThreadComposer", () => {
   it("uses the web path menu when no native host picker is available", async () => {
     const user = userEvent.setup();
     const defaultScope = {
-      project_path: "/Users/test/.nanobot/workspace",
+      project_path: "/Users/test/.nanodesk/workspace",
       project_name: "workspace",
       access_mode: "full" as const,
       restrict_to_workspace: false,
@@ -1439,11 +1485,11 @@ describe("ThreadComposer", () => {
 
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(input).toHaveValue("");
-    expect(window.localStorage.getItem("nanobot.webui.slashCommandRecents")).toBeNull();
+    expect(window.localStorage.getItem("nanodesk.webui.slashCommandRecents")).toBeNull();
   });
 
   it("orders recent slash commands first for the blank slash menu", () => {
-    window.localStorage.setItem("nanobot.webui.slashCommandRecents", JSON.stringify(["/history"]));
+    window.localStorage.setItem("nanodesk.webui.slashCommandRecents", JSON.stringify(["/history"]));
     render(
       <ThreadComposer
         onSend={vi.fn()}
@@ -1658,6 +1704,392 @@ describe("ThreadComposer", () => {
     });
   });
 
+  it("opens workspace file mentions with fuzzy path matching and prefers folders", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: [
+          { name: "components", path: "src/components", kind: "folder" },
+          { name: "Button.tsx", path: "src/components/Button.tsx", kind: "file" },
+          { name: "main.py", path: "src/main.py", kind: "file" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onSend = vi.fn();
+    try {
+      render(
+        <ThreadComposer
+          onSend={onSend}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey="websocket:chat-file-ref"
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@comp", selectionStart: 5 } });
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
+      const requested = String(fetchMock.mock.calls[0]?.[0] ?? "");
+      expect(requested).toContain("/api/webui/workspace/files?");
+      expect(requested).toContain("scope=websocket%3Achat-file-ref");
+      expect(requested).toContain("project_path=%2Ftmp%2Fproject");
+      expect(requested).toContain("q=comp");
+
+      const folderOption = await screen.findByRole("option", {
+        name: /components\/ @src\/components Workspace folder/i,
+      });
+      expect(folderOption).toHaveAttribute("aria-selected", "true");
+      expect(
+        screen.getByRole("option", {
+          name: /Button\.tsx @src\/components\/Button\.tsx Workspace file/i,
+        }),
+      ).toBeInTheDocument();
+
+      // Selecting a file attaches structured pathRefs on send.
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(input).toHaveValue("@src/components/Button.tsx ");
+
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      expect(onSend).toHaveBeenCalledWith("@src/components/Button.tsx", undefined, {
+        pathRefs: [{ path: "src/components/Button.tsx", kind: "file" }],
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the gateway file ordering instead of re-sorting hidden folders to the top", async () => {
+    // The gateway already ranks folders first and demotes tool noise such as
+    // .nanobot to the end. Re-sorting by name here would undo that and put a
+    // hidden folder back in the first slot.
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: [
+          { name: "docs", path: "docs", kind: "folder" },
+          { name: "src", path: "src", kind: "folder" },
+          { name: "AGENTS.md", path: "AGENTS.md", kind: "file" },
+          { name: ".nanobot", path: ".nanobot", kind: "folder" },
+          { name: ".claude", path: ".claude", kind: "folder" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(
+        <ThreadComposer
+          onSend={vi.fn()}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey="websocket:chat-file-order"
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
+
+      const options = await screen.findAllByRole("option");
+      // The option aria-label is `${displayName} @${path} ${description} ${type}`.
+      const paths = options.map(
+        (option) => (option.getAttribute("aria-label") ?? "").match(/@(\S+)\s/)?.[1],
+      );
+      expect(paths).toEqual(["docs", "src", "AGENTS.md", ".nanobot", ".claude"]);
+      expect(options[0]).toHaveAttribute("aria-selected", "true");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("hoists the shared directory into a breadcrumb and renders leaf-plus-trail rows", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: [
+          { name: "AuthController.kt", path: "src/main/kotlin/com/example/management/AuthController.kt", kind: "file" },
+          { name: "AuthService.kt", path: "src/main/kotlin/com/example/management/AuthService.kt", kind: "file" },
+          { name: "AuthRequest.kt", path: "src/main/kotlin/com/example/management/dto/AuthRequest.kt", kind: "file" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(
+        <ThreadComposer
+          onSend={vi.fn()}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey="websocket:chat-file-layout"
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@auth", selectionStart: 5 } });
+
+      const option = await screen.findByRole("option", {
+        name: /AuthController\.kt @src\/main\/kotlin\/com\/example\/management\/AuthController\.kt Workspace file/i,
+      });
+
+      // The directory shared by every candidate is shown once, as a breadcrumb.
+      const filesGroup = screen.getByRole("group", { name: "Files" });
+      expect(within(filesGroup).getByText("src/…/example/management/")).toBeInTheDocument();
+
+      // Rows carry only the bold leaf name; the long path is not repeated.
+      const leaf = within(option).getByText("Auth");
+      expect(leaf).toBeInTheDocument();
+      // The typed query is highlighted inside the leaf name...
+      expect(leaf).toHaveClass("text-primary");
+      expect(within(option).getByText("Controller.kt")).toBeInTheDocument();
+      // ...with the rest of the name left unstyled.
+      expect(within(option).getByText("Controller.kt")).not.toHaveClass("text-primary");
+      expect(within(option).queryByText(/src\/main\/kotlin/)).not.toBeInTheDocument();
+
+      // The redundant right-hand "file"/"folder" badge is gone.
+      expect(within(option).queryByText("file")).not.toBeInTheDocument();
+
+      // A row deeper than the breadcrumb keeps only the differing segment.
+      const nested = await screen.findByRole("option", {
+        name: /AuthRequest\.kt @src\/main\/kotlin\/com\/example\/management\/dto\/AuthRequest\.kt Workspace file/i,
+      });
+      expect(within(nested).getByText("Auth")).toBeInTheDocument();
+      expect(within(nested).getByText("Request.kt")).toBeInTheDocument();
+      expect(within(nested).getByText("dto")).toBeInTheDocument();
+      // The trail keeps the full path available on hover.
+      expect(within(nested).getByText("dto").closest("[title]")).toHaveAttribute(
+        "title",
+        "@src/main/kotlin/com/example/management/dto/AuthRequest.kt",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("titles mirrored paths by their branch so rows stay distinguishable", async () => {
+    const mirrored = [
+      "management/auth/src/main/kotlin/com/louzhihui/management",
+      "management/bill/src/main/kotlin/com/louzhihui/management",
+      "management/common/src/main/kotlin/com/louzhihui/management",
+    ];
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: mirrored.map((path) => ({
+          name: path.slice(path.lastIndexOf("/") + 1),
+          path,
+          kind: "folder" as const,
+        })),
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(
+        <ThreadComposer
+          onSend={vi.fn()}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey="websocket:chat-mirrored"
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@manage", selectionStart: 7 } });
+      const options = await screen.findAllByRole("option", { name: /Workspace folder/i });
+
+      // Every row would render the same leaf name ("management") if the title
+      // were taken from the end of the path, so it must walk outward.
+      expect(options).toHaveLength(3);
+      const titles = options.map(
+        (option) => within(option).getByText(/^(auth|bill|common)\/$/).textContent,
+      );
+      expect(titles).toEqual(["auth/", "bill/", "common/"]);
+
+      // The trail keeps the branch at the head and the destination at the tail.
+      expect(options[0]).toHaveTextContent("auth/src/…/louzhihui/management");
+      expect(options[1]).toHaveTextContent("bill/src/…/louzhihui/management");
+      expect(options[2]).toHaveTextContent("common/src/…/louzhihui/management");
+
+      // The shared prefix is shown once, above the rows.
+      const filesGroup = screen.getByRole("group", { name: "Files" });
+      expect(within(filesGroup).getByText("management/")).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("compresses each trail when candidates share no single directory", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: [
+          { name: "AuthController.kt", path: "src/main/kotlin/com/example/management/AuthController.kt", kind: "file" },
+          { name: "AuthFilter.kt", path: "gateway/src/main/java/com/example/auth/AuthFilter.kt", kind: "file" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(
+        <ThreadComposer
+          onSend={vi.fn()}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey="websocket:chat-file-compress"
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@auth", selectionStart: 5 } });
+
+      const option = await screen.findByRole("option", {
+        name: /AuthController\.kt @src\/main\/kotlin\/com\/example\/management\/AuthController\.kt Workspace file/i,
+      });
+      const filesGroup = screen.getByRole("group", { name: "Files" });
+      expect(filesGroup).not.toHaveTextContent("…/com/example/management/");
+      // No shared prefix to hoist, so the trail keeps the full path's head and
+      // tail and collapses only the middle.
+      expect(within(option).getByText("src/main/…/example/management")).toBeInTheDocument();
+      expect(within(option).getByText("src/main/…/example/management").closest("[title]")).toHaveAttribute(
+        "title",
+        "@src/main/kotlin/com/example/management/AuthController.kt",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("loads workspace file mentions from the active project even before a chat id exists", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: {
+        get: (name: string) => (
+          name.toLowerCase() === "content-type" ? "application/json" : null
+        ),
+      },
+      json: async () => ({
+        dir: ".",
+        project_path: "/tmp/project",
+        items: [
+          { name: "README.md", path: "README.md", kind: "file" },
+          { name: "src", path: "src", kind: "folder" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(
+        <ThreadComposer
+          onSend={vi.fn()}
+          placeholder="Type your message..."
+          workspaceScope={{
+            project_path: "/tmp/project",
+            project_name: "project",
+            access_mode: "restricted",
+          }}
+          workspaceSessionKey={null}
+          workspaceFileRefToken="test-token"
+        />,
+      );
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
+      const requested = String(fetchMock.mock.calls[0]?.[0] ?? "");
+      expect(requested).toContain("/api/webui/workspace/files?");
+      expect(requested).toContain("project_path=%2Ftmp%2Fproject");
+      expect(requested).not.toContain("scope=");
+
+      expect(
+        await screen.findByRole("option", {
+          name: /src\/ @src Workspace folder/i,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", {
+          name: /README\.md @README\.md Workspace file/i,
+        }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("attaches persisted sessions only through the shared mention palette", () => {
     const onSend = vi.fn();
     render(
@@ -1680,7 +2112,7 @@ describe("ThreadComposer", () => {
       target: { value: "参考 @收费", selectionStart: 6 },
     });
 
-    expect(screen.getByRole("group", { name: "Nanobot conversations" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Nanodesk conversations" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /@收费设计/i })).toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Tab" });
 
@@ -2979,7 +3411,7 @@ describe("ThreadComposer", () => {
     expect(await screen.findByText("do not persist this")).toBeInTheDocument();
     expect(
       window.localStorage.getItem(
-        "nanobot.webui.composerQueuedGuidance.v1:temporary-private",
+        "nanodesk.webui.composerQueuedGuidance.v1:temporary-private",
       ),
     ).toBeNull();
 
@@ -2999,7 +3431,7 @@ describe("ThreadComposer", () => {
     });
     expect(
       window.localStorage.getItem(
-        "nanobot.webui.composerQueuedGuidance.v1:temporary-private",
+        "nanodesk.webui.composerQueuedGuidance.v1:temporary-private",
       ),
     ).toBeNull();
   });

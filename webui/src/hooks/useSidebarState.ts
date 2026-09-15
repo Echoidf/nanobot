@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClient } from "@/providers/ClientProvider";
 import { normalizeWorkbenchState } from "@/components/workbench/workbench-model";
 import { fetchSidebarState } from "@/lib/api";
+import { normalizeWorkspacePath } from "@/lib/workspace";
 import type { ChatSummary, SidebarStatePayload } from "@/lib/types";
 
 export const DEFAULT_SIDEBAR_STATE: SidebarStatePayload = {
@@ -12,6 +13,7 @@ export const DEFAULT_SIDEBAR_STATE: SidebarStatePayload = {
   session_order: [],
   title_overrides: {},
   project_name_overrides: {},
+  hidden_project_keys: [],
   tags_by_key: {},
   collapsed_groups: {},
   workbench: { version: 1, tabs: {} },
@@ -74,6 +76,19 @@ function boolMap(value: unknown): Record<string, boolean> {
   return out;
 }
 
+/** Project keys are workspace paths, so store them in the grouped form. */
+function projectKeys(value: unknown): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const key of uniqueStrings(value)) {
+    const normalized = normalizeWorkspacePath(key);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 export function normalizeSidebarState(raw: unknown): SidebarStatePayload {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ...DEFAULT_SIDEBAR_STATE, view: { ...DEFAULT_SIDEBAR_STATE.view } };
@@ -93,6 +108,7 @@ export function normalizeSidebarState(raw: unknown): SidebarStatePayload {
     session_order: uniqueStrings(value.session_order),
     title_overrides: stringMap(value.title_overrides),
     project_name_overrides: stringMap(value.project_name_overrides),
+    hidden_project_keys: projectKeys(value.hidden_project_keys),
     tags_by_key: tagsMap(value.tags_by_key),
     collapsed_groups: boolMap(value.collapsed_groups),
     workbench: normalizeWorkbenchState(value.workbench),
@@ -112,6 +128,10 @@ function pruneMissingSessions(
   sessions: ChatSummary[],
 ): SidebarStatePayload {
   const valid = new Set(sessions.map((session) => session.key));
+  const projectKeys = new Set(sessions
+    .map((session) => session.workspaceScope?.project_path ?? "")
+    .filter((path) => path.length > 0)
+    .map((path) => normalizeWorkspacePath(path)));
   const filterKeys = (keys: string[]) => keys.filter((key) => valid.has(key));
   const filterMap = <T,>(map: Record<string, T>): Record<string, T> => {
     const out: Record<string, T> = {};
@@ -127,6 +147,17 @@ function pruneMissingSessions(
     session_order: filterKeys(state.session_order),
     title_overrides: filterMap(state.title_overrides),
     tags_by_key: filterMap(state.tags_by_key),
+    // Removed projects and their collapse state are sidebar-only metadata: drop
+    // them once no topic references the folder any more.
+    hidden_project_keys: state.hidden_project_keys.filter(
+      (key) => projectKeys.has(normalizeWorkspacePath(key)),
+    ),
+    collapsed_groups: Object.fromEntries(
+      Object.entries(state.collapsed_groups).filter(([key]) => {
+        if (!key.startsWith("project:")) return true;
+        return projectKeys.has(normalizeWorkspacePath(key.slice("project:".length)));
+      }),
+    ),
   };
 }
 

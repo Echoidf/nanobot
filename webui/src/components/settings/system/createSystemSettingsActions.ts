@@ -12,9 +12,9 @@ import type { SystemSettingsState } from "@/components/settings/system/useSystem
 import {
   cancelMcpOAuth,
   completeMcpOAuth,
-  disableNanobotFeature,
-  enableNanobotFeature,
-  fetchNanobotFeatures,
+  disableNanodeskFeature,
+  enableNanodeskFeature,
+  fetchNanodeskFeatures,
   fetchSettings,
   fetchMcpOAuthStatus,
   fetchMcpPresets,
@@ -31,12 +31,12 @@ import {
 } from "@/lib/api";
 import { notifyCliAppsChanged } from "@/lib/cli-app-events";
 import { notifyMcpPresetsChanged } from "@/lib/mcp-preset-events";
-import type { NanobotClient } from "@/lib/nanobot-client";
+import type { NanodeskClient } from "@/lib/nanodesk-client";
 import type {
   AutomationUpdatePayload,
   McpOAuthFlowPayload,
   McpPresetsPayload,
-  NanobotFeatureInfo,
+  NanodeskFeatureInfo,
   SessionAutomationJob,
 } from "@/lib/types";
 
@@ -67,8 +67,8 @@ function isExpectedMcpOAuthPendingReloadFailure(
 
 interface SystemSettingsActionsOptions {
   state: SystemSettingsState;
-  featureCatalog: NanobotFeatureInfo[];
-  client: NanobotClient;
+  featureCatalog: NanodeskFeatureInfo[];
+  client: NanodeskClient;
   token: string;
   getToken: () => string;
   t: TFunction;
@@ -98,7 +98,7 @@ export function createSystemSettingsActions({
     mcpOAuthFlowRef,
     mcpOAuthNavigatedUrlRef,
     mcpOAuthPopupRef,
-    nanobotFeatures,
+    nanodeskFeatures,
     setApiService,
     setApiServiceAction,
     setApiServiceError,
@@ -124,10 +124,10 @@ export function createSystemSettingsActions({
     setMcpOAuthPopupBlocked,
     setMcpPresetAction,
     setMcpPresets,
-    setNanobotFeatureAction,
-    setNanobotFeatureConfirm,
-    setNanobotFeatures,
-    setNanobotFeaturesError,
+    setNanodeskFeatureAction,
+    setNanodeskFeatureConfirm,
+    setNanodeskFeatures,
+    setNanodeskFeaturesError,
   } = state;
 
   const installCapabilities = async (names: string[]): Promise<boolean> => {
@@ -135,23 +135,23 @@ export function createSystemSettingsActions({
       (name) => !featureCatalog.find((feature) => feature.name === name)?.installed,
     );
     if (!missing.length) return true;
-    setNanobotFeatureAction(`enable:${names.join("+")}`);
-    setNanobotFeaturesError(null);
+    setNanodeskFeatureAction(`enable:${names.join("+")}`);
+    setNanodeskFeaturesError(null);
     try {
-      let latest = nanobotFeatures;
+      let latest = nanodeskFeatures;
       for (const name of missing) {
-        latest = await enableNanobotFeature(client, name);
+        latest = await enableNanodeskFeature(client, name);
         if (latest.requires_restart) {
           setPendingRestartSections((prev) => ({ ...prev, runtime: true }));
         }
       }
-      if (latest) setNanobotFeatures(latest);
+      if (latest) setNanodeskFeatures(latest);
       return true;
     } catch (err) {
-      setNanobotFeaturesError((err as Error).message);
+      setNanodeskFeaturesError((err as Error).message);
       return false;
     } finally {
-      setNanobotFeatureAction(null);
+      setNanodeskFeatureAction(null);
     }
   };
 
@@ -167,8 +167,8 @@ export function createSystemSettingsActions({
         ? await startApiService(client, values!)
         : await stopApiService(client);
       setApiService(payload);
-      const refreshed = await fetchNanobotFeatures(token);
-      setNanobotFeatures(refreshed);
+      const refreshed = await fetchNanodeskFeatures(token);
+      setNanodeskFeatures(refreshed);
       const nextSettings = await fetchSettings(token);
       applyPayload(nextSettings);
     } catch (err) {
@@ -201,33 +201,33 @@ export function createSystemSettingsActions({
     }
   };
 
-  const handleNanobotFeatureAction = async (
+  const handleNanodeskFeatureAction = async (
     action: "enable" | "disable",
     name: string,
     confirmed = false,
   ) => {
     const feature = featureCatalog.find((item) => item.name === name);
     if (action === "enable" && !confirmed && feature && !feature.installed && feature.install_supported) {
-      setNanobotFeaturesError(null);
-      setNanobotFeatureConfirm(feature);
+      setNanodeskFeaturesError(null);
+      setNanodeskFeatureConfirm(feature);
       return;
     }
     const key = `${action}:${name}`;
-    setNanobotFeatureAction(key);
-    setNanobotFeatureConfirm(null);
-    setNanobotFeaturesError(null);
+    setNanodeskFeatureAction(key);
+    setNanodeskFeatureConfirm(null);
+    setNanodeskFeaturesError(null);
     try {
       const payload = action === "enable"
-        ? await enableNanobotFeature(client, name)
-        : await disableNanobotFeature(client, name);
-      setNanobotFeatures(payload);
+        ? await enableNanodeskFeature(client, name)
+        : await disableNanodeskFeature(client, name);
+      setNanodeskFeatures(payload);
       if (payload.requires_restart) {
         setPendingRestartSections((prev) => ({ ...prev, runtime: true }));
       }
     } catch (err) {
-      setNanobotFeaturesError((err as Error).message);
+      setNanodeskFeaturesError((err as Error).message);
     } finally {
-      setNanobotFeatureAction(null);
+      setNanodeskFeatureAction(null);
     }
   };
 
@@ -288,7 +288,7 @@ export function createSystemSettingsActions({
     try {
       popup = window.open(
         authorizationUrl ?? "about:blank",
-        "nanobot-mcp-oauth",
+        "nanodesk-mcp-oauth",
         "popup,width=560,height=720,resizable=yes,scrollbars=yes",
       );
       if (popup) {
@@ -371,7 +371,7 @@ export function createSystemSettingsActions({
       setMcpError(
         flow.hot_reload.message
         || t("settings.mcp.reloadFailed", {
-          defaultValue: "Signed in, but nanobot could not connect the tools. Try restarting nanobot.",
+          defaultValue: "Signed in, but nanodesk could not connect the tools. Try restarting nanodesk.",
         }),
       );
       return;
@@ -649,7 +649,7 @@ export function createSystemSettingsActions({
     handleMcpOAuthOpen,
     handleMcpPresetAction,
     handleMcpToolsChange,
-    handleNanobotFeatureAction,
+    handleNanodeskFeatureAction,
     handleSaveCustomMcp,
     installCapabilities,
   };

@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -44,7 +45,7 @@ import { useLogoFallback } from "@/hooks/useLogoFallback";
 import { providerBrand } from "@/lib/provider-brand";
 import { cn } from "@/lib/utils";
 import type {
-  NanobotFeaturesPayload,
+  NanodeskFeaturesPayload,
   ProviderOAuthAuthorizationRequired,
   SettingsPayload,
 } from "@/lib/types";
@@ -643,9 +644,81 @@ function ProviderAdvancedOptions({
   );
 }
 
+export function ProviderDeleteDialog({
+  provider,
+  deleting,
+  onOpenChange,
+  onConfirm,
+}: {
+  provider: SettingsPayload["providers"][number] | null;
+  deleting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  const tx = (key: string, fallback: string, values?: Record<string, unknown>) =>
+    t(key, { defaultValue: fallback, ...(values ?? {}) });
+  const isCustom = provider?.is_custom === true;
+  return (
+    <Dialog open={provider !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[440px]">
+        <DialogHeader className="text-left">
+          <DialogTitle>
+            {tx(
+              isCustom
+                ? "settings.providers.deleteCustomProviderTitle"
+                : "settings.providers.deleteProviderTitle",
+              isCustom ? "Delete custom provider?" : "Reset provider?",
+            )}
+          </DialogTitle>
+          <DialogDescription className="leading-5">
+            {tx(
+              isCustom
+                ? "settings.providers.deleteCustomProviderHelp"
+                : "settings.providers.deleteProviderHelp",
+              isCustom
+                ? "This removes the provider “{{name}}” and its configuration from nanodesk."
+                : "This resets “{{name}}” to its default configuration and clears its saved credentials.",
+              { name: provider?.label ?? "" },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={deleting}
+            onClick={() => onOpenChange(false)}
+          >
+            {tx("settings.actions.cancel", "Cancel")}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleting}
+            onClick={onConfirm}
+          >
+            {deleting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {deleting
+              ? tx("settings.actions.deleting", "Deleting...")
+              : tx(
+                  isCustom
+                    ? "settings.providers.deleteProvider"
+                    : "settings.providers.resetProvider",
+                  isCustom ? "Delete" : "Reset",
+                )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ProvidersSettings({
   settings,
-  nanobotFeatures,
+  nanodeskFeatures,
   featureAction,
   capabilityError,
   expandedProvider,
@@ -660,6 +733,7 @@ export function ProvidersSettings({
   onToggleProviderKeyEditing,
   onChangeProviderForm,
   onSaveProvider,
+  onDeleteProvider,
   onCreateCustomProvider,
   onProviderOAuthLogin,
   onProviderOAuthLogout,
@@ -668,7 +742,7 @@ export function ProvidersSettings({
   isRestarting,
 }: {
   settings: SettingsPayload;
-  nanobotFeatures: NanobotFeaturesPayload | null;
+  nanodeskFeatures: NanodeskFeaturesPayload | null;
   featureAction: string | null;
   capabilityError: string | null;
   expandedProvider: string | null;
@@ -683,6 +757,7 @@ export function ProvidersSettings({
   onToggleProviderKeyEditing: (provider: string) => void;
   onChangeProviderForm: (provider: string, value: Partial<ProviderForm>) => void;
   onSaveProvider: (provider: string) => void;
+  onDeleteProvider: (provider: SettingsPayload["providers"][number]) => void;
   onCreateCustomProvider: (draft: CustomProviderDraft) => Promise<boolean>;
   onProviderOAuthLogin: (provider: string) => void;
   onProviderOAuthLogout: (provider: string) => void;
@@ -773,7 +848,7 @@ export function ProvidersSettings({
         ? "azure"
         : null;
     const supportFeature = supportName
-      ? (nanobotFeatures?.features ?? []).find((feature) => feature.name === supportName)
+      ? (nanodeskFeatures?.features ?? []).find((feature) => feature.name === supportName)
       : null;
     return (
       <div key={provider.name} className="divide-y divide-border/45">
@@ -839,7 +914,7 @@ export function ProvidersSettings({
                         : provider.name === "openai_codex" && remoteBrowserAccess
                           ? tx(
                               "settings.oauth.codexRemoteSignInHelp",
-                              "Sign in through this browser, then paste the full localhost callback URL back into nanobot.",
+                              "Sign in through this browser, then paste the full localhost callback URL back into nanodesk.",
                             )
                           : provider.name === "xai_grok" && remoteBrowserAccess
                           ? tx(
@@ -899,32 +974,46 @@ export function ProvidersSettings({
                     onChange={(value) => onChangeProviderForm(provider.name, value)}
                     footer={
                       <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => toggleProvider(provider.name)}
-                          disabled={saving}
-                          className="rounded-full"
-                        >
-                          {t("settings.actions.cancel")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onSaveProvider(provider.name)}
-                          disabled={saving || !oauthSettingsDirty}
-                          className="rounded-full"
-                        >
-                          {oauthSettingsSaving ? (
-                            <Loader2
-                              className="mr-1.5 h-3.5 w-3.5 animate-spin"
-                              aria-hidden
-                            />
-                          ) : null}
-                          {oauthSettingsSaving
-                            ? t("settings.actions.saving")
-                            : tx("settings.providers.saveProvider", "Save provider")}
-                        </Button>
+                        <div className="flex items-center justify-between gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onDeleteProvider(provider)}
+                            disabled={saving}
+                            className="rounded-full text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                            {tx("settings.providers.deleteProvider", "Delete provider")}
+                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => toggleProvider(provider.name)}
+                              disabled={saving}
+                              className="rounded-full"
+                            >
+                              {t("settings.actions.cancel")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onSaveProvider(provider.name)}
+                              disabled={saving || !oauthSettingsDirty}
+                              className="rounded-full"
+                            >
+                              {oauthSettingsSaving ? (
+                                <Loader2
+                                  className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              {oauthSettingsSaving
+                                ? t("settings.actions.saving")
+                                : tx("settings.providers.saveProvider", "Save provider")}
+                            </Button>
+                          </div>
+                        </div>
                       </>
                     }
                   />
@@ -1027,31 +1116,42 @@ export function ProvidersSettings({
                   form={form}
                   onChange={(value) => onChangeProviderForm(provider.name, value)}
                 />
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-between gap-2">
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => toggleProvider(provider.name)}
-                    className="rounded-full"
+                    onClick={() => onDeleteProvider(provider)}
+                    className="rounded-full text-destructive hover:text-destructive"
                   >
-                    {t("settings.actions.cancel")}
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                    {tx("settings.providers.deleteProvider", "Delete provider")}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onSaveProvider(provider.name)}
-                    disabled={
-                      saving
-                      || missingRequiredApiKey
-                      || missingOptionalCredential
-                      || (provider.is_custom && !form.displayName.trim())
-                    }
-                    className="rounded-full"
-                  >
-                    {saving
-                      ? t("settings.actions.saving")
-                      : tx("settings.providers.saveProvider", "Save provider")}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => toggleProvider(provider.name)}
+                      className="rounded-full"
+                    >
+                      {t("settings.actions.cancel")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onSaveProvider(provider.name)}
+                      disabled={
+                        saving
+                        || missingRequiredApiKey
+                        || missingOptionalCredential
+                        || (provider.is_custom && !form.displayName.trim())
+                      }
+                      className="rounded-full"
+                    >
+                      {saving
+                        ? t("settings.actions.saving")
+                        : tx("settings.providers.saveProvider", "Save provider")}
+                    </Button>
+                  </div>
                 </div>
               </>
             )}

@@ -1,13 +1,13 @@
 {
   "app": {
-    "brand": "nanobot",
+    "brand": "工作区",
     "loading": {
-      "connecting": "正在连接 nanobot…",
-      "boot": "正在加载 nanobot…"
+      "connecting": "正在连接…",
+      "boot": "正在加载工作区…"
     },
     "error": {
-      "title": "无法连接到 nanobot",
-      "gatewayHint": "请确认网关已启动（`nanobot gateway`），并且当前页面与网关运行在同一台机器上。"
+      "title": "无法连接到工作区",
+      "gatewayHint": "请确认网关已启动，并且当前页面与网关运行在同一台机器上。"
     },
     "auth": {
       "label": "密码",
@@ -24,8 +24,8 @@
     },
     "system": {
       "section": "系统",
-      "restartHint": "重启 nanobot 以应用运行时更改。",
-      "restart": "重启 nanobot",
+      "restartHint": "重启工作区以应用运行时更改。",
+      "restart": "重启工作区",
       "restarting": "正在重启...",
       "restartEngine": "重启引擎",
       "restartingEngine": "正在重启引擎..."
@@ -34,11 +34,11 @@
       "completed": "重启已完成，用时 {{seconds}} 秒。"
     },
     "documentTitle": {
-      "base": "nanobot",
-      "chat": "{{title}} · nanobot"
+      "base": "NanoDesk",
+      "chat": "{{title}} · NanoDesk"
     },
     "meta": {
-      "description": "nanobot Web UI —— 与你的 nanobot 工作区对话。"
+      "description": "用于聊天、工具和自动任务的 AI 工作区。"
     },
     "pairing": {
       "title": "配对聊天用户",
@@ -74,7 +74,11 @@
       "ariaLabel": "切换语言"
     },
     "apps": "应用",
+    "mcp": "MCP 服务",
     "automations": "自动任务",
+    "agents": "Agent",
+    "agentUnavailable": "该 Agent 不可用",
+    "defaultModel": "默认模型",
     "skills": {
       "title": "技能"
     }
@@ -98,6 +102,7 @@
       "channels": "渠道",
       "cliApps": "CLI 应用",
       "mcp": "MCP",
+      "mcpServers": "MCP 服务",
       "runtime": "系统",
       "advanced": "安全",
       "apps": "应用",
@@ -184,7 +189,7 @@
       "language": "语言",
       "provider": "提供商",
       "model": "模型",
-      "restart": "重启 nanobot",
+      "restart": "重启 nanodesk",
       "configPath": "配置路径",
       "activePreset": "当前预设",
       "gateway": "网关",
@@ -254,7 +259,7 @@
       "defaultImageSize": "发送给支持此选项的提供商的尺寸提示。",
       "maxImagesPerTurn": "单次 generate_image 请求可生成的图片上限。",
       "timezone": "用于日程和需要时间感知的回复。",
-      "cliAppsCatalog": "只安装 nanobot 可本地运行的应用 CLI 适配器；不会改动原生应用。",
+      "cliAppsCatalog": "只安装 nanodesk 可本地运行的应用 CLI 适配器；不会改动原生应用。",
       "cliAppsFilter": "按应用、类别或能力搜索。",
       "localServiceAccess": "允许完全访问权限下的 shell 命令访问 localhost 服务。",
       "webuiDefaultAccess": "用于没有单独项目权限的 Web 聊天。",
@@ -300,7 +305,7 @@
       "readyStatus": "就绪",
       "readyTry": "试试 @{{name}}",
       "readyCopied": "已复制",
-      "readyPrompt": "让 nanobot 在这个任务中使用 @{{name}}。",
+      "readyPrompt": "让 nanodesk 在这个任务中使用 @{{name}}。",
       "openChat": "回到对话",
       "unsupported": "暂不支持",
       "unavailable": "不可用",
@@ -344,7 +349,7 @@
       "saveCustom": "保存 MCP",
       "configImport": "导入 mcp.json",
       "importConfig": "导入",
-      "restartRequired": "重启 nanobot 以连接更新后的 MCP 工具。",
+      "restartRequired": "重启 nanodesk 以连接更新后的 MCP 工具。",
       "toolsFound": "{{count}} 个工具",
       "loading": "正在加载 MCP 预设...",
       "empty": "没有匹配的 MCP 预设。",
@@ -372,14 +377,14 @@
       "preparingSignIn": "正在准备安全登录…",
       "openSignInToContinue": "打开登录页面以继续。",
       "finishSignInInBrowser": "请在浏览器窗口中完成登录。",
-      "manualCallbackRequired": "完成登录后，将回调 URL 粘贴到 nanobot。",
+      "manualCallbackRequired": "完成登录后，将回调 URL 粘贴到 nanodesk。",
       "manualCallbackHelp": "授权后，localhost 页面将无法打开。请复制地址栏中的完整 URL 并粘贴到这里。",
       "finishingConnection": "正在完成连接…",
       "activatingTools": "正在启用工具…",
       "connected": "已连接。",
       "connectionFailed": "连接失败。",
       "connectionCancelled": "已取消连接。",
-      "reloadFailed": "已登录，但 nanobot 无法连接这些工具。请尝试重启 nanobot。",
+      "reloadFailed": "已登录，但 nanodesk 无法连接这些工具。请尝试重启 nanodesk。",
       "oauthFailed": "无法连接，请重新登录。",
       "statusMissingDependency": "缺少依赖",
       "statusComingSoon": "暂不支持",
@@ -427,7 +432,73 @@
         "linear": "查找和管理 Linear 议题、项目和评论。",
         "github": "管理 GitHub 仓库、议题和拉取请求。",
         "supabase": "查看和管理 Supabase 项目。"
-      }
+      },
+      "statusDisabled": "已关闭"
+    },
+    "mcpServers": {
+      "title": "MCP 服务",
+      "subtitle": "配置智能体可以启动哪些 MCP 服务，并查看它们的实时连接状态。",
+      "addServer": "新增 MCP 服务",
+      "searchPlaceholder": "搜索 MCP 服务",
+      "loading": "正在加载 MCP 服务……",
+      "empty": "还没有配置任何 MCP 服务。",
+      "emptySearch": "没有匹配的 MCP 服务。",
+      "clearSearch": "清空搜索",
+      "noDescription": "暂无描述。",
+      "restartRequired": "重启网关后 MCP 服务配置才会生效。",
+      "reconnect": "重新连接",
+      "toggleAria": "启用 {{name}}",
+      "createTitle": "新增 MCP 服务",
+      "editTitle": "编辑 MCP 服务",
+      "detailTitle": "MCP 服务详情",
+      "modalSubtitleExisting": "{{name}} · {{transport}}",
+      "modalSubtitleNew": "连接一个 stdio、HTTP 或 SSE MCP 服务。",
+      "basicSection": "基础信息",
+      "connectionSection": "连接配置",
+      "metaSection": "补充信息",
+      "serverNameLabel": "服务名称",
+      "serverNameHint": "用于工具命名空间，建议使用简短的 ASCII 名称。",
+      "nameInvalid": "仅支持字母、数字、短横线或下划线。",
+      "transportHint": "stdio 启动本地进程，HTTP 与 SSE 连接远程服务。",
+      "timeoutLabel": "超时（毫秒）",
+      "timeoutHint": "单次工具调用上限，范围 {{min}}-{{max}}。",
+      "timeoutInvalid": "请输入一个正数。",
+      "urlLabel": "URL",
+      "urlHint": "远程 MCP 端点。",
+      "commandHint": "要启动的可执行程序，例如 npx。",
+      "required": "必填。",
+      "cwdLabel": "CWD（可选）",
+      "cwdHint": "默认继承应用进程。",
+      "cwdPlaceholder": "继承应用进程",
+      "argsLabel": "Args（每行一个）",
+      "argsHint": "每行作为一个参数，连接字符串不会被拆坏。",
+      "envLabel": "Env（每行 KEY=VALUE，可选）",
+      "envHint": "密钥以掩码显示，保持不修改即可沿用原值。",
+      "envInvalid": "每行必须是 KEY=VALUE。",
+      "headersLabel": "Headers（每行 KEY=VALUE，可选）",
+      "headersHint": "用于需要鉴权的端点。",
+      "descriptionLabel": "描述（可选）",
+      "docsLabel": "文档链接（可选）",
+      "enabledHint": "关闭后保留配置，但不再启动该服务。",
+      "enabledAria": "服务已启用",
+      "status": {
+        "connected": "已连接",
+        "connecting": "连接中",
+        "failed": "连接失败",
+        "disabled": "已停用",
+        "idle": "已配置",
+        "needsAuth": "需要登录",
+        "needsKey": "缺少密钥",
+        "missingDependency": "缺少依赖",
+        "notConnected": "未连接"
+      },
+      "serverNamePlaceholder": "该服务的工具命名空间，简短即可",
+      "urlPlaceholder": "远程服务的端点地址",
+      "commandPlaceholder": "网关要启动的程序",
+      "argsPlaceholder": "每行一个参数",
+      "envPlaceholder": "每行一个 KEY=VALUE",
+      "headersPlaceholder": "每行一个 KEY=VALUE",
+      "docsPlaceholder": "指向该服务文档的链接"
     },
     "values": {
       "light": "浅色",
@@ -465,11 +536,11 @@
       "loadError": "无法加载设置",
       "unsaved": "有未保存的更改。",
       "upToDate": "已是最新。",
-      "savedRestart": "已保存。重启 nanobot 后生效。",
+      "savedRestart": "已保存。重启 nanodesk 后生效。",
       "restartAfterSaving": "保存更改后，在合适时重启。",
       "savedRestartApply": "已保存。准备好后重启。",
       "imageProviderRestart": "图片提供商更改已保存。准备好后重启。",
-      "hostRestartAfterSaving": "保存后 nanobot 会重启引擎。",
+      "hostRestartAfterSaving": "保存后 nanodesk 会重启引擎。",
       "hostRestartPending": "已保存。准备好后会重启引擎。",
       "hostApiUnavailable": "宿主操作仅在原生应用中可用。",
       "logsOpened": "已打开日志文件夹。",
@@ -487,13 +558,14 @@
       "deleting": "正在删除...",
       "cancel": "取消",
       "dismiss": "关闭",
+      "refresh": "刷新",
       "open": "打开",
       "export": "导出",
       "opening": "正在打开...",
       "exporting": "正在导出..."
     },
     "byok": {
-      "description": "使用自己的提供商密钥。nanobot 会从当前配置读取这些值，只有已配置的提供商才能用于模型预设。",
+      "description": "使用自己的提供商密钥。nanodesk 会从当前配置读取这些值，只有已配置的提供商才能用于模型预设。",
       "configured": "已配置",
       "notConfigured": "未配置",
       "configuredSection": "已配置",
@@ -595,7 +667,13 @@
       "capabilityXSearch": "X 搜索",
       "capabilityXSearchHelp": "允许受支持的 Grok 模型使用 xAI 托管的 X Search，并在对话中展示搜索过程。",
       "capabilityOpenAISearch": "OpenAI 联网搜索",
-      "capabilityOpenAISearchHelp": "允许兼容 Responses API 的模型搜索网络，并在对话中展示搜索过程。"
+      "capabilityOpenAISearchHelp": "允许兼容 Responses API 的模型搜索网络，并在对话中展示搜索过程。",
+      "deleteProvider": "删除提供商",
+      "resetProvider": "重置",
+      "deleteCustomProviderTitle": "删除自定义提供商？",
+      "deleteProviderTitle": "重置提供商？",
+      "deleteCustomProviderHelp": "这将从 nanodesk 中移除提供商“{{name}}”及其配置。",
+      "deleteProviderHelp": "这将把“{{name}}”重置为默认配置，并清除已保存的凭据。"
     },
     "legal": {
       "thirdPartyBrands": "产品名称、Logo 和品牌归各自所有者所有；此处仅用于识别，不代表背书或合作。"
@@ -620,7 +698,7 @@
     "api": {
       "title": "API 服务",
       "openaiCompatible": "OpenAI 兼容 API",
-      "description": "让 SDK 和其他智能体通过本地 /v1 接口连接 nanobot。",
+      "description": "让 SDK 和其他智能体通过本地 /v1 接口连接 nanodesk。",
       "start": "启动 API 服务",
       "starting": "正在启动...",
       "stop": "停止",
@@ -640,12 +718,12 @@
     },
     "observability": {
       "title": "可观测性",
-      "configured": "nanobot 已检测到追踪凭证。",
-      "environment": "设置 LANGFUSE_SECRET_KEY 和 LANGFUSE_PUBLIC_KEY 后重启 nanobot。",
+      "configured": "nanodesk 已检测到追踪凭证。",
+      "environment": "设置 LANGFUSE_SECRET_KEY 和 LANGFUSE_PUBLIC_KEY 后重启 nanodesk。",
       "enable": "启用追踪支持"
     },
     "apps": {
-      "description": "将工具接入 nanobot，然后在对话中通过 @ 调用。",
+      "description": "将工具接入 nanodesk，然后在对话中通过 @ 调用。",
       "cliLabel": "应用",
       "mcpLabel": "MCP",
       "channelLabel": "渠道",
@@ -668,21 +746,21 @@
       "browseApps": "浏览应用",
       "browseIntegrations": "浏览 MCP 工具",
       "emptyIntegrationsHint": "可在下方添加自定义 MCP 服务器。",
-      "restartRequired": "重启 nanobot 以应用更新后的应用和 MCP 工具。"
+      "restartRequired": "重启 nanodesk 以应用更新后的应用和 MCP 工具。"
     },
     "channels": {
-      "description": "把聊天应用、邮箱和 WebUI 连接到 nanobot。",
+      "description": "把聊天应用、邮箱和 WebUI 连接到 nanodesk。",
       "caption": "{{enabled}} 个运行中 · 共 {{total}} 个渠道",
       "searchPlaceholder": "搜索渠道",
       "backToChannels": "所有渠道",
       "catalog": "渠道",
       "loading": "正在加载渠道...",
       "empty": "没有匹配的渠道。",
-      "restartRequired": "重启 nanobot 以应用更新后的渠道支持。",
+      "restartRequired": "重启 nanodesk 以应用更新后的渠道支持。",
       "requires": "需要：{{requirements}}",
       "setUp": "设置",
       "setupGuide": "配置指南",
-      "setupSummary": "启用只会开启 nanobot 对该渠道的支持。请补充平台凭据，然后重启 nanobot。",
+      "setupSummary": "启用只会开启 nanodesk 对该渠道的支持。请补充平台凭据，然后重启 nanodesk。",
       "configKeys": "配置字段",
       "enable": "启用渠道",
       "disable": "禁用渠道",
@@ -737,7 +815,7 @@
         "unsupported": "手动配置"
       }
     },
-    "nanobotFeatures": {
+    "nanodeskFeatures": {
       "enabled": "已启用",
       "enable": "启用",
       "disable": "禁用",
@@ -889,7 +967,7 @@
       "signedInAs": "已登录为 {{account}}",
       "signInHelp": "从这台设备登录；不会在配置中保存 API 密钥。",
       "remoteSignInHelp": "点击“登录”在你的电脑上打开 xAI，完成登录后粘贴页面显示的授权码。",
-      "codexRemoteSignInHelp": "在此浏览器中登录，然后将完整的 localhost 回调 URL 粘贴回 nanobot。",
+      "codexRemoteSignInHelp": "在此浏览器中登录，然后将完整的 localhost 回调 URL 粘贴回 nanodesk。",
       "signInRequired": "需要登录",
       "signInBeforeSaving": "请先登录此提供商，再保存模型预设。",
       "signedIn": "已登录",
@@ -897,9 +975,9 @@
       "proxyLabel": "网络代理",
       "proxySaveBeforeSignIn": "请先保存代理更改再登录。",
       "saveProxy": "保存代理",
-      "localCodeHelp": "请在浏览器中完成登录。nanobot 通常会自动完成；若未自动完成，请将授权码粘贴到下方。",
+      "localCodeHelp": "请在浏览器中完成登录。nanodesk 通常会自动完成；若未自动完成，请将授权码粘贴到下方。",
       "remoteCodeHelp": "点击“登录”在你的电脑上打开 xAI。完成登录后，请将 xAI 显示的授权码粘贴到下方。",
-      "localCallbackHelp": "请在浏览器中完成登录。nanobot 通常会自动完成；若未自动完成，请复制地址栏中的完整 localhost 回调 URL 并粘贴到下方。",
+      "localCallbackHelp": "请在浏览器中完成登录。nanodesk 通常会自动完成；若未自动完成，请复制地址栏中的完整 localhost 回调 URL 并粘贴到下方。",
       "remoteCallbackHelp": "在此浏览器中打开 ChatGPT 并完成登录。当 localhost 页面无法打开时，请复制地址栏中的完整 URL 并粘贴到下方。",
       "authorizationCode": "授权码",
       "callbackUrl": "完整回调 URL",
@@ -942,15 +1020,15 @@
       "deleteConfirmAction": "删除技能",
       "instructionsTitle": "技能说明",
       "setupRequired": "需要设置",
-      "setupDescription": "请在运行 nanobot 的设备上安装缺少的依赖，然后重新检查。",
+      "setupDescription": "请在运行 nanodesk 的设备上安装缺少的依赖，然后重新检查。",
       "copySetupCommand": "复制设置命令",
       "checkAgain": "重新检查",
       "localImportButton": "从本机导入",
       "localImportTitle": "导入本机技能",
-      "localImportDescription": "选择已有技能并通过软链接导入当前工作区，不会复制源文件。",
-      "localImportPath": "技能目录",
+      "localImportDescription": "选择 gateway 所在机器上的已有技能，通过软链接导入当前工作区，不会复制源文件。",
+      "localImportPath": "技能目录（gateway 本机路径）",
       "localImportScan": "扫描技能目录",
-      "localImportLoadFailed": "无法扫描本机技能目录。",
+      "localImportLoadFailed": "无法扫描 gateway 本机技能目录。",
       "localImportFailed": "无法导入所选技能。",
       "localImportResult": "已导入 {{imported}} 个技能，跳过 {{skipped}} 个。",
       "localImportSelectAll": "全选",
@@ -1027,6 +1105,11 @@
       "complete": "智能体已完成",
       "updated": "有新内容"
     },
+    "mcp": {
+      "arguments": "请求参数",
+      "result": "返回结果",
+      "error": "MCP 工具错误"
+    },
     "pin": "置顶",
     "unpin": "取消置顶",
     "rename": "重命名",
@@ -1036,6 +1119,12 @@
     "renameProjectTitle": "重命名项目",
     "renameProjectDescription": "为这个项目设置一个仅用于 WebUI 侧边栏的名称。",
     "renameProjectPlaceholder": "项目名称",
+    "removeProject": "从侧边栏移除",
+    "removeProjectHint": "话题仍会保留，只是不再按项目分组显示。",
+    "deleteProjectTopics": "删除 {{count}} 个话题",
+    "removedProjects": "已移除的项目",
+    "removedProjectCount": "{{count}} 个话题",
+    "restoreProject": "重新显示",
     "renameSave": "保存",
     "archive": "归档",
     "unarchive": "取消归档",
@@ -1062,6 +1151,8 @@
     "titleMany": "删除这 {{count}} 个对话？",
     "description": "此操作无法撤销。",
     "descriptionMany": "此操作无法撤销。",
+    "projectTitle": "删除「{{project}}」的 {{count}} 个话题？",
+    "projectDescription": "该项目也会一并从侧边栏移除，此操作无法撤销。",
     "cancel": "取消",
     "confirm": "删除",
     "automationsDescription": "这个话题有关联的自动任务。删除话题也会删除这些自动任务。",
@@ -1129,7 +1220,7 @@
       "imageQuickActions": {
         "icon": {
           "title": "设计应用图标",
-          "prompt": "生成一个干净的 1:1 nanobot 应用图标：友好的机器人，简洁矢量风格，蓝白柔和配色，不要文字。"
+          "prompt": "生成一个干净的 1:1 nanodesk 应用图标：友好的机器人，简洁矢量风格，蓝白柔和配色，不要文字。"
         },
         "sticker": {
           "title": "制作贴纸",
@@ -1280,7 +1371,7 @@
             "description": "取消这个对话中正在运行的智能体回合。"
           },
           "restart": {
-            "title": "重启 nanobot",
+            "title": "重启 nanodesk",
             "description": "原地重启 bot 进程。"
           },
           "status": {
@@ -1332,16 +1423,17 @@
       "mentions": {
         "ariaLabel": "提及",
         "label": "应用",
+        "fileGroup": "文件",
         "cliGroup": "CLI 应用",
         "mcpGroup": "MCP 服务",
-        "sessionGroup": "Nanobot 对话",
+        "sessionGroup": "Nanodesk 对话",
         "cliBadge": "CLI",
         "mcpBadge": "MCP",
         "cliDescription": "使用 @{{name}} 调用本地 CLI",
         "mcpDescription": "使用 @{{name}} 调用 MCP 服务",
         "cliTitle": "CLI 应用：{{name}}",
         "mcpTitle": "MCP 服务：{{name}}",
-        "sessionBadge": "Nanobot 对话",
+        "sessionBadge": "Nanodesk 对话",
         "sessionDescription": "引用历史会话 @{{name}}"
       },
       "encoding": "处理中…",
@@ -1364,7 +1456,7 @@
       "workspace": {
         "accessAria": "工作区访问权限",
         "projectAria": "选择项目",
-        "projectPlaceholder": "选择项目",
+        "projectPlaceholder": "请选择工作区",
         "default": "默认权限",
         "defaultShort": "默认",
         "full": "完全访问权限",
@@ -1456,7 +1548,7 @@
     "close": "关闭文件预览",
     "loading": "正在加载预览...",
     "failed": "无法预览这个文件。",
-    "routeMissing": "文件预览需要最新的网关。请重启 nanobot gateway 后再试。",
+    "routeMissing": "文件预览需要最新的网关。请重启 nanodesk gateway 后再试。",
     "resize": "调整文件预览宽度",
     "truncated": "文件较大，当前只显示前半部分预览。"
   },
@@ -1526,6 +1618,91 @@
       "manualPlaceholder": "/Users/name/project",
       "usePath": "使用路径",
       "absolutePathRequired": "请输入这台机器上的绝对文件夹路径。"
+    }
+  },
+  "agents": {
+    "workbench": {
+      "title": "Agent 档案",
+      "eyebrow": "Agent 工作台",
+      "subtitle": "选择一个 Agent 档案，查看其提示词绑定与能力，然后以该档案开始对话。",
+      "refresh": "刷新",
+      "listTitle": "Agent 列表",
+      "empty": "尚未配置任何 Agent。",
+      "noDescription": "暂无简介。"
+    },
+    "sections": {
+      "basic": "基础信息",
+      "basicHint": "为 Agent 设置清晰的身份信息。",
+      "runtime": "状态与模型",
+      "prompt": "提示词",
+      "capabilities": "能力绑定"
+    },
+    "profile": {
+      "title": "基本信息",
+      "agentId": "Agent ID",
+      "modelPreset": "模型预设",
+      "defaultDescription": "默认 NanoDesk 助手，使用全局模型、技能与工具。"
+    },
+    "skills": {
+      "title": "技能",
+      "empty": "该 Agent 未绑定额外技能。",
+      "missing": "缺失技能：{{names}}",
+      "disabled": "已停用技能：{{names}}"
+    },
+    "tools": {
+      "title": "工具",
+      "empty": "该 Agent 未绑定额外工具。",
+      "missing": "缺失工具：{{names}}"
+    },
+    "summary": {
+      "title": "能力摘要",
+      "skills": "技能",
+      "restrictedTools": "受限工具",
+      "runtime": "运行状态",
+      "available": "可用",
+      "blocked": "已阻止"
+    },
+    "recentChats": {
+      "title": "最近会话",
+      "empty": "该 Agent 暂无最近会话。",
+      "untitled": "未命名会话",
+      "noPreview": "暂无预览。"
+    },
+    "newChat": "与该 Agent 开始对话",
+    "status": {
+      "ready": "就绪",
+      "needsAttention": "需要处理",
+      "disabled": "已停用"
+    },
+    "noProfile": "没有可用的 Agent 档案。",
+    "actions": {
+      "create": "创建 Agent",
+      "edit": "编辑",
+      "save": "保存",
+      "cancel": "取消",
+      "delete": "删除"
+    },
+    "fields": {
+      "id": "ID",
+      "name": "名称",
+      "icon": "图标",
+      "description": "简介",
+      "systemPrompt": "系统提示词",
+      "skills": "技能",
+      "tools": "工具",
+      "default": "默认",
+      "status": "状态",
+      "modelPreset": "模型预设",
+      "selectSkills": "选择技能",
+      "searchSkills": "搜索技能...",
+      "selectTools": "选择工具",
+      "searchTools": "搜索工具..."
+    },
+    "dialog": {
+      "createTitle": "创建 Agent",
+      "editTitle": "编辑 Agent",
+      "createDescription": "填写 Agent 档案并保存。",
+      "editDescription": "更新 Agent 档案并保存更改。"
     }
   }
 }

@@ -9,7 +9,7 @@ import re
 import shlex
 import shutil
 import urllib.parse
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +46,17 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     r"((?:api[_-]?key|token|secret|password|bearer)(?:[=:]|\s+))[^,\s'\"&]+",
     re.IGNORECASE,
 )
+# Bare parameter/variable names that always carry a credential, including the
+# camelCase spellings hosted MCP endpoints use (``browserbaseApiKey``).
+_SECRET_NAME_RE = re.compile(
+    r"(api[_-]?key|[_-]?token$|[_-]?token|secret|password|passwd|credential|bearer|access[_-]?key|private[_-]?key|apikey)",
+    re.IGNORECASE,
+)
+# ``--api-key``/``--token`` style CLI flags: the value is the *next* argument.
+_SECRET_ARG_RE = re.compile(
+    r"^--?[^=]*?(api[_-]?key|token|secret|password|passwd|credential|access[_-]?key)$",
+    re.IGNORECASE,
+)
 _MCP_ATTACHMENT_KEYS = (
     "name",
     "display_name",
@@ -58,8 +69,12 @@ _MCP_ATTACHMENT_KEYS = (
 )
 _DEFAULT_TEST_TIMEOUT = 20
 _DEFAULT_CUSTOM_TIMEOUT = 30
-_CUSTOM_ACTIONS = {"custom", "import", "import-cursor", "tools"}
+_CUSTOM_ACTIONS = {"custom", "import", "import-cursor", "tools", "enabled"}
 _MCP_RUNTIME_STATUSES = {"connecting", "connected", "failed"}
+_REDACTED_MCP_SECRET = "••••••••"
+# ``postgres://user:hunter2@host`` style connection strings hide a password even
+# when the surrounding key looks harmless.
+_CREDENTIAL_URL_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^/\s]*:[^/\s]*@", re.IGNORECASE)
 
 McpReload = Callable[[], Awaitable[dict[str, Any]]]
 McpRuntimeStatus = Callable[[], Mapping[str, str]]
@@ -503,9 +518,25 @@ def _known_preset_names() -> set[str]:
 
 
 def _known_mcp_names(config_path: Path | None = None) -> set[str]:
+    """Servers the runtime can actually start (presets plus active config entries).
+
+    Soft-disabled entries stay on disk but never connect, so they must not be
+    accepted as chat preset attachments.
+    """
     names = _known_preset_names()
     with suppress(Exception):
-        names.update(load_config(config_path).tools.mcp_servers)
+        config = load_config(config_path)
+        names.update(
+            name
+            for name, cfg in config.tools.mcp_servers.items()
+            if name not in names and cfg.enabled
+        )
+        # A known preset that was explicitly turned off is not attachable either.
+        names -= {
+            name
+            for name, cfg in config.tools.mcp_servers.items()
+            if name in names and not cfg.enabled
+        }
     return names
 
 
@@ -713,6 +744,159 @@ def _command_available(command: str) -> bool:
     return path.exists() and path.is_file()
 
 
+def _secret_name_hit(name: str) -> bool:
+    """Whether a parameter / env / header / flag name denotes a credential."""
+    return bool(name) and _SECRET_NAME_RE.search(name) is not None
+
+
+def _is_secret_env_entry(key: str, value: str) -> bool:
+    """Whether an env/header entry must be hidden from the browser-facing payload."""
+    if _secret_name_hit(key):
+        return True
+    return _looks_like_secret_value(value)
+
+
+def _looks_like_secret_value(value: str) -> bool:
+    """Whether a free-text value carries an embedded credential."""
+    return bool(_CREDENTIAL_URL_RE.search(value) or _SECRET_ASSIGNMENT_RE.search(value))
+
+
+def _args_form_values(args: Sequence[str]) -> list[str]:
+    """Render ``args`` for the edit form without echoing credential arguments.
+
+    Presets pass keys either as ``--api-key <value>`` or as ``--api-key=<value>``,
+    so both the following positional slot and the inline value are redacted. The
+    save path restores untouched sentinel slots from the stored list, so editing
+    an unrelated field never drops a key.
+    """
+    rendered: list[str] = []
+    redact_next = False
+    for arg in args:
+        if redact_next and not arg.startswith("-"):
+            rendered.append(_REDACTED_MCP_SECRET)
+            redact_next = False
+            continue
+        redact_next = bool(_SECRET_ARG_RE.search(arg))
+        flag, sep, _ = arg.partition("=")
+        if sep and _secret_name_hit(flag):
+            rendered.append(f"{flag}={_REDACTED_MCP_SECRET}")
+            continue
+        if _is_secret_env_entry("", arg):
+            rendered.append(_REDACTED_MCP_SECRET)
+            continue
+        rendered.append(arg)
+    return rendered
+
+
+def _restore_redacted_list(
+    submitted: Sequence[str],
+    stored: Sequence[str],
+) -> list[str]:
+    """Restore argument slots the browser still shows as redacted.
+
+    Both a whole masked argument (``••••••••``) and a masked inline value
+    (``--api-key=••••••••``) resolve back to the stored argument at the same
+    position, so re-saving a server never loses its credential.
+    """
+    restored: list[str] = []
+    for index, value in enumerate(submitted):
+        previous = stored[index] if index < len(stored) else None
+        if value == _REDACTED_MCP_SECRET and previous is not None:
+            restored.append(previous)
+            continue
+        flag, sep, inline = value.partition("=")
+        if sep and inline == _REDACTED_MCP_SECRET and previous is not None:
+            previous_flag, previous_sep, _ = previous.partition("=")
+            if previous_sep and previous_flag == flag:
+                restored.append(previous)
+                continue
+        restored.append(value)
+    return restored
+
+
+def _env_form_values(cfg: MCPServerConfig) -> dict[str, str]:
+    """Render ``env`` for the edit form, redacting credential-shaped values.
+
+    The WebUI round-trips the redaction sentinel unchanged, and the save path
+    restores the stored value, so opening a server never loses a secret.
+    """
+    return {
+        key: (_REDACTED_MCP_SECRET if _is_secret_env_entry(key, value) else value)
+        for key, value in cfg.env.items()
+    }
+
+
+def _scrub_url_secrets(url: str) -> str:
+    """Hide embedded basic-auth and secret query parameters in a server URL."""
+    if not url:
+        return url
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return _REDACTED_MCP_SECRET
+    netloc = parts.netloc
+    if "@" in netloc:
+        _, _, host = netloc.rpartition("@")
+        netloc = f"{_REDACTED_MCP_SECRET}@{host}" if parts.username else host
+    pairs: list[str] = []
+    for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True):
+        secret = _secret_name_hit(key) or _looks_like_secret_value(value)
+        rendered = _REDACTED_MCP_SECRET if secret else value
+        pairs.append(f"{key}={rendered}")
+    query = "&".join(pairs)
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, query, ""))
+
+
+def _restore_untouched_url(submitted: str, existing: MCPServerConfig | None) -> str:
+    """Keep the stored URL when the browser echoed back its redacted form.
+
+    The modal shows redacted secrets; saving that text verbatim would persist a
+    sentinel as a real credential, so an unchanged scrubbed URL resolves back to
+    the value already on disk.
+    """
+    if _REDACTED_MCP_SECRET not in submitted:
+        return submitted
+    if existing is not None and submitted == _scrub_url_secrets(existing.url):
+        return existing.url
+    raise McpPresetError(
+        "URL still contains a masked secret; retype the full value before saving"
+    )
+
+
+def _transport_for(cfg: MCPServerConfig) -> str:
+    """Resolve the effective transport for configs written before ``type`` existed."""
+    if cfg.type:
+        return cfg.type
+    if cfg.command:
+        return "stdio"
+    if cfg.url.rstrip("/").endswith("/sse"):
+        return "sse"
+    return "streamableHttp"
+
+
+def _server_form_payload(name: str, cfg: MCPServerConfig) -> dict[str, Any]:
+    """Editable, connection-safe view of one configured MCP server."""
+    return {
+        "name": name,
+        "transport": _transport_for(cfg),
+        "auth": cfg.auth,
+        "command": cfg.command,
+        "args": _args_form_values(cfg.args),
+        "cwd": cfg.cwd,
+        "url": _scrub_url_secrets(cfg.url),
+        "env": _env_form_values(cfg),
+        "headers": {
+            key: (_REDACTED_MCP_SECRET if _is_secret_env_entry(key, value) else value)
+            for key, value in cfg.headers.items()
+        },
+        "enabled_tools": list(cfg.enabled_tools),
+        "tool_timeout": cfg.tool_timeout,
+        "enabled": cfg.enabled,
+        "description": cfg.description,
+        "docs_url": cfg.docs_url,
+    }
+
+
 def _config_available(cfg: MCPServerConfig | None) -> bool:
     if cfg is None:
         return False
@@ -726,6 +910,8 @@ def _config_available(cfg: MCPServerConfig | None) -> bool:
 def _status_for(preset: McpPreset, cfg: MCPServerConfig | None) -> str:
     if cfg is None:
         return "not_installed" if preset.install_supported else "coming_soon"
+    if not cfg.enabled:
+        return "disabled"
     if any(field.required and not _field_configured(field, cfg) for field in preset.fields):
         return "missing_credentials"
     if cfg.auth == "oauth" and not mcp_oauth_has_credentials(preset.name, cfg.url):
@@ -739,7 +925,9 @@ def _connection_summary(cfg: MCPServerConfig | None) -> str:
     if cfg is None:
         return ""
     if cfg.command:
-        return " ".join([cfg.command, *cfg.args[:2]]).strip()
+        # Show the same redacted argument view the edit form uses: a DSN with an
+        # embedded password must not appear in a list badge.
+        return " ".join([cfg.command, *_args_form_values(cfg.args[:2])]).strip()
     if cfg.url:
         parsed = urllib.parse.urlsplit(cfg.url)
         return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
@@ -876,6 +1064,8 @@ def _preset_payload(preset: McpPreset, configured_servers: dict[str, MCPServerCo
         "required_fields": [_field_payload(field, cfg) for field in preset.fields],
         "connection_summary": _connection_summary(cfg),
         "enabled_tools": _tool_allowlist(cfg),
+        "server_enabled": True if cfg is None else cfg.enabled,
+        "form": _server_form_payload(preset.name, cfg) if cfg is not None else None,
         "source": "preset",
         "manifest": _preset_manifest(preset, logo_url=logo_url),
     }
@@ -892,15 +1082,19 @@ def _custom_payload(
         transport = "stdio" if cfg.command else ("sse" if cfg.url.rstrip("/").endswith("/sse") else "streamableHttp")
     if cfg.auth == "oauth" and not mcp_oauth_has_credentials(name, cfg.url):
         status = "authorization_required"
+    elif not cfg.enabled:
+        status = "disabled"
+    elif cfg.command and not _command_available(cfg.command):
+        status = "missing_dependency"
     else:
-        status = "missing_dependency" if cfg.command and not _command_available(cfg.command) else "configured"
+        status = "configured"
     configured = status != "authorization_required"
     return {
         "name": name,
         "display_name": name,
         "category": "custom",
-        "description": "Custom MCP server from nanobot config.",
-        "docs_url": "",
+        "description": cfg.description or "Custom MCP server from nanobot config.",
+        "docs_url": cfg.docs_url,
         "transport": transport,
         "auth": cfg.auth,
         "requires": "",
@@ -916,6 +1110,9 @@ def _custom_payload(
         "connection_summary": _connection_summary(cfg),
         "enabled_tools": _tool_allowlist(cfg),
         "tool_names": tool_names or [],
+        "tool_count": len(tool_names or []),
+        "server_enabled": cfg.enabled,
+        "form": _server_form_payload(name, cfg),
         "source": "custom",
         "manifest": _custom_manifest(name, cfg),
     }
@@ -1260,6 +1457,73 @@ def _parse_string_map(raw: str | None) -> dict[str, str]:
     return out
 
 
+def _parse_args_list(raw: str | None) -> list[str]:
+    """Parse ``Args`` as one argument per line, with JSON arrays still accepted.
+
+    The management modal asks for one argument per line because MCP arguments
+    are often connection strings; shell-splitting them would silently corrupt
+    quoting, while a bare JSON array is awkward to hand-edit.
+    """
+    if raw is None or not raw.strip():
+        return []
+    text = raw.strip()
+    if text.startswith("["):
+        return _parse_string_list(text)
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _parse_env_map(raw: str | None) -> dict[str, str]:
+    """Parse ``Env``/``Headers`` as ``KEY=VALUE`` lines, with JSON objects still accepted.
+
+    The management modal edits line-oriented fields, while the Apps page keeps
+    posting JSON, so both shapes must land on the same typed result. A bare
+    line with no ``=`` is rejected instead of being silently dropped.
+    """
+    if raw is None or not raw.strip():
+        return {}
+    text = raw.strip()
+    if text.startswith("{"):
+        return _parse_string_map(text)
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        if "=" not in entry:
+            raise McpPresetError(f"expected KEY=VALUE, got '{entry[:40]}'")
+        key, _, value = entry.partition("=")
+        key = key.strip()
+        if not key:
+            raise McpPresetError("env entries need a key")
+        out[key] = value.strip()
+    return out
+
+
+def _parse_bool_flag(raw: str | None, *, default: bool) -> bool:
+    text = (raw or "").strip().lower()
+    if not text:
+        return default
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise McpPresetError("expected a true/false value")
+
+
+def _restore_redacted_secrets(
+    submitted: Mapping[str, str],
+    stored: Mapping[str, str],
+) -> dict[str, str]:
+    """Keep stored values for entries the browser still shows as redacted."""
+    restored: dict[str, str] = {}
+    for key, value in submitted.items():
+        if value == _REDACTED_MCP_SECRET:
+            restored[key] = stored.get(key, value)
+        else:
+            restored[key] = value
+    return restored
+
+
 def _parse_enabled_tools(raw: str | None) -> list[str]:
     if raw is None or not raw.strip():
         return ["*"]
@@ -1323,7 +1587,36 @@ def _validated_server_name(name: str) -> str:
     return name.strip().lower()
 
 
-def _custom_server_from_query(query: QueryParams) -> tuple[str, MCPServerConfig]:
+_TIMEOUT_MS_PER_SECOND = 1000
+# ``MCPServerConfig.tool_timeout`` is seconds; the management modal speaks
+# milliseconds, so both spellings are accepted at this boundary.
+_MIN_TOOL_TIMEOUT_MS = 5 * _TIMEOUT_MS_PER_SECOND
+_MAX_TOOL_TIMEOUT_MS = 600 * _TIMEOUT_MS_PER_SECOND
+
+
+def _resolve_tool_timeout(query: QueryParams) -> int:
+    """Return ``tool_timeout`` in seconds from ``timeout_ms`` or legacy seconds."""
+    raw_ms = (_query_first(query, "timeout_ms") or "").strip()
+    raw_seconds = (_query_first(query, "tool_timeout") or "").strip()
+    if raw_ms:
+        try:
+            milliseconds = int(raw_ms)
+        except ValueError as exc:
+            raise McpPresetError("timeout_ms must be an integer") from exc
+        clamped = max(_MIN_TOOL_TIMEOUT_MS, min(milliseconds, _MAX_TOOL_TIMEOUT_MS))
+        return max(1, clamped // _TIMEOUT_MS_PER_SECOND)
+    if raw_seconds:
+        try:
+            return max(5, min(int(raw_seconds), 600))
+        except ValueError as exc:
+            raise McpPresetError("tool_timeout must be an integer") from exc
+    return _DEFAULT_CUSTOM_TIMEOUT
+
+
+def _custom_server_from_query(
+    query: QueryParams,
+    existing: MCPServerConfig | None = None,
+) -> tuple[str, MCPServerConfig]:
     name = _validated_server_name((_query_first(query, "name") or "").strip())
     command = (_query_first(query, "command") or "").strip()
     url = (_query_first(query, "url") or "").strip()
@@ -1332,31 +1625,43 @@ def _custom_server_from_query(query: QueryParams) -> tuple[str, MCPServerConfig]
         raise McpPresetError("stdio MCP servers require a command")
     if transport in {"sse", "streamableHttp"} and not url:
         raise McpPresetError("remote MCP servers require a URL")
-    headers = _parse_string_map(_query_first(query, "headers"))
+    # A redacted URL the user never touched must resolve back to the stored one,
+    # otherwise saving the modal would persist the sentinel as a real endpoint.
+    if transport != "stdio":
+        url = _restore_untouched_url(url, existing)
+    headers = _restore_redacted_secrets(
+        _parse_env_map(_query_first(query, "headers")),
+        existing.headers if existing is not None else {},
+    )
     auth = _normalize_auth(
         _query_first(query, "auth"),
         transport=transport,
         url=url,
         headers=headers,
     )
-    raw_timeout = (_query_first(query, "tool_timeout") or "").strip()
-    tool_timeout = _DEFAULT_CUSTOM_TIMEOUT
-    if raw_timeout:
-        try:
-            tool_timeout = max(5, min(int(raw_timeout), 600))
-        except ValueError as exc:
-            raise McpPresetError("tool_timeout must be an integer") from exc
     cfg = MCPServerConfig(
         type=transport,
         auth=auth,
         command=command if transport == "stdio" else "",
-        args=_parse_string_list(_query_first(query, "args")),
-        env=_parse_string_map(_query_first(query, "env")),
+        args=_restore_redacted_list(
+            _parse_args_list(_query_first(query, "args")),
+            existing.args if existing is not None else [],
+        ),
+        env=_restore_redacted_secrets(
+            _parse_env_map(_query_first(query, "env")),
+            existing.env if existing is not None else {},
+        ),
         cwd=(_query_first(query, "cwd") or "").strip() if transport == "stdio" else "",
         url=url if transport in {"sse", "streamableHttp"} else "",
         headers=headers,
-        tool_timeout=tool_timeout,
+        tool_timeout=_resolve_tool_timeout(query),
         enabled_tools=_parse_enabled_tools(_query_first(query, "enabled_tools")),
+        enabled=_parse_bool_flag(
+            _query_first(query, "enabled"),
+            default=existing.enabled if existing is not None else True,
+        ),
+        description=(_query_first(query, "description") or "").strip()[:280],
+        docs_url=(_query_first(query, "docs_url") or "").strip()[:500],
     )
     return name, cfg
 
@@ -1462,7 +1767,12 @@ def custom_mcp_action(
 ) -> dict[str, Any]:
     config = load_config(config_path) if config_path is not None else load_config()
     if action == "custom":
-        name, cfg = _custom_server_from_query(query)
+        name, cfg = _custom_server_from_query(
+            query,
+            config.tools.mcp_servers.get(
+                _validated_server_name((_query_first(query, "name") or "").strip())
+            ),
+        )
         delete_credentials = _oauth_credentials_replaced(config.tools.mcp_servers.get(name), cfg)
         config.tools.mcp_servers[name] = cfg
         save_config(config, config_path)
@@ -1470,6 +1780,26 @@ def custom_mcp_action(
             delete_mcp_oauth_credentials(name)
         payload = mcp_presets_payload(
             last_action=_server_action_message(action, name),
+            config_path=config_path,
+        )
+        payload["requires_restart"] = True
+        return payload
+
+    if action == "enabled":
+        name = _validated_server_name((_query_first(query, "name") or "").strip())
+        cfg = config.tools.mcp_servers.get(name)
+        if cfg is None:
+            raise McpPresetError("unknown MCP server", status=404)
+        enabled = _parse_bool_flag(_query_first(query, "enabled"), default=True)
+        config.tools.mcp_servers[name] = cfg.model_copy(update={"enabled": enabled})
+        save_config(config, config_path)
+        message = "Enabled" if enabled else "Disabled"
+        payload = mcp_presets_payload(
+            last_action={
+                "ok": True,
+                "message": f"{message} MCP server {name}.",
+                "enabled": enabled,
+            },
             config_path=config_path,
         )
         payload["requires_restart"] = True

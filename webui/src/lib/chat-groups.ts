@@ -30,10 +30,19 @@ export interface ChatGroupingOptions {
   archivedKeys: string[];
   titleOverrides: Record<string, string>;
   projectNameOverrides: Record<string, string>;
+  hiddenProjectKeys?: string[];
   sessionOrder: string[];
   showArchived: boolean;
   sort: SidebarSortMode;
   defaultWorkspacePath?: string | null;
+}
+
+/** A project that was removed from the sidebar but still owns topics. */
+export interface HiddenProjectEntry {
+  key: string;
+  label: string;
+  path: string;
+  sessionCount: number;
 }
 
 export function groupSessions(
@@ -227,12 +236,59 @@ export function displayTitle(
   );
 }
 
+function projectLabelFor(
+  key: string,
+  path: string,
+  scopeName: string | undefined,
+  projectNameOverrides: Record<string, string>,
+): string {
+  return projectNameOverrides[key]?.trim()
+    || scopeName?.trim()
+    || projectNameFromPath(path);
+}
+
+/**
+ * Projects the sidebar no longer groups, listed so the user can bring one back.
+ * Entries without topics are skipped: those folders are already invisible.
+ */
+export function hiddenProjectEntries(
+  sessions: ChatSummary[],
+  options: Pick<ChatGroupingOptions, "hiddenProjectKeys" | "projectNameOverrides" | "defaultWorkspacePath">,
+): HiddenProjectEntry[] {
+  const hidden = new Set((options.hiddenProjectKeys ?? []).map(normalizeWorkspacePath));
+  if (hidden.size === 0) return [];
+  const entries = new Map<string, HiddenProjectEntry>();
+  for (const session of sessions) {
+    const scope = session.workspaceScope;
+    const path = scope?.project_path || "";
+    if (!path || sameWorkspacePath(path, options.defaultWorkspacePath)) continue;
+    const key = normalizeWorkspacePath(path);
+    if (!hidden.has(key)) continue;
+    const existing = entries.get(key);
+    if (existing) {
+      existing.sessionCount += 1;
+      continue;
+    }
+    entries.set(key, {
+      key,
+      path,
+      label: projectLabelFor(key, path, scope?.project_name, options.projectNameOverrides),
+      sessionCount: 1,
+    });
+  }
+  return Array.from(entries.values()).sort((a, b) => a.label.localeCompare(b.label, "en", {
+    numeric: true,
+    sensitivity: "base",
+  }));
+}
+
 function groupSessionsByProject(
   sessions: ChatSummary[],
   labels: Pick<ChatGroupLabels, "all">,
   options: ChatGroupingOptions,
 ): SessionGroup[] {
   const archived = new Set(options.archivedKeys);
+  const hidden = new Set((options.hiddenProjectKeys ?? []).map(normalizeWorkspacePath));
   const conversations: ChatSummary[] = [];
   const buckets = new Map<string, {
     path?: string;
@@ -247,14 +303,16 @@ function groupSessionsByProject(
     }
     const scope = session.workspaceScope;
     const path = scope?.project_path || "";
-    if (!path || sameWorkspacePath(path, options.defaultWorkspacePath)) {
+    if (
+      !path
+      || sameWorkspacePath(path, options.defaultWorkspacePath)
+      || hidden.has(normalizeWorkspacePath(path))
+    ) {
       conversations.push(session);
       continue;
     }
     const key = normalizeWorkspacePath(path);
-    const label = options.projectNameOverrides[key]?.trim()
-      || scope?.project_name?.trim()
-      || projectNameFromPath(path);
+    const label = projectLabelFor(key, path, scope?.project_name, options.projectNameOverrides);
     const bucket = buckets.get(key) ?? {
       path,
       label,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from nanobot.agent.workbench import AGENT_ID_METADATA_KEY, DEFAULT_AGENT_ID
 from nanobot.session.manager import Session
 from nanobot.utils.helpers import estimate_message_tokens, truncate_text
 
@@ -52,6 +53,7 @@ def session_context_payload(session: Session) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "session_key": session.key,
+        "agent_id": _agent_id_from_metadata(session.metadata),
         "total_messages": len(session.messages),
         "archived_messages": min(session.last_consolidated, len(session.messages)),
         "replay_messages": len(replay),
@@ -62,3 +64,10 @@ def session_context_payload(session: Session) -> dict[str, Any]:
         "archived_summary_at": summary_at,
         "last_usage": last_usage,
     }
+
+
+def _agent_id_from_metadata(metadata: object) -> str:
+    if not isinstance(metadata, dict):
+        return DEFAULT_AGENT_ID
+    raw = cast(dict[str, Any], metadata).get(AGENT_ID_METADATA_KEY)
+    return raw.strip() if isinstance(raw, str) and raw.strip() else DEFAULT_AGENT_ID

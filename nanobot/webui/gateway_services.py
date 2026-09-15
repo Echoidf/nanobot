@@ -60,6 +60,7 @@ def build_gateway_services(
     runtime_surface: str,
     runtime_capabilities_overrides: dict[str, Any] | None,
     disabled_skills: set[str] | None = None,
+    tool_definitions: Callable[[], list[dict[str, Any]]] | None = None,
     cron_service: CronService | None = None,
     local_trigger_store: LocalTriggerStore | None = None,
     cron_pending_job_ids: Callable[[str], set[str]] | None = None,
@@ -131,6 +132,7 @@ def build_gateway_services(
         mcp_runtime_status=mcp_runtime_status,
         mcp_reload=mcp_reload,
         skill_state_action=skill_state_action,
+        tool_definitions=tool_definitions,
         log=logger,
     )
     return GatewayServices(

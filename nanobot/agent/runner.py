@@ -75,6 +75,14 @@ _MAX_EMPTY_RETRIES = 2
 _MAX_LENGTH_RECOVERIES = 3
 _MAX_INJECTIONS_PER_TURN = 3
 _MAX_INJECTION_CYCLES = 5
+_MAX_MODEL_ERROR_RETRIES = 5
+_RETRYABLE_MODEL_ERROR_MARKERS = (
+    "connection error",
+    "connection reset",
+    "connection refused",
+    "network error",
+    "reasoning_content",
+)
 
 
 def _restore_outer_whitespace(content: str, original: str | None) -> str:
@@ -901,6 +909,8 @@ class AgentRunner:
         context: AgentHookContext,
         *,
         malformed_retry: bool = False,
+        error_retry_count: int = 0,
+        suppress_stream: bool = False,
         conversation_state: ProviderConversationStateController,
         provider_context: ProviderCallContext | None = None,
     ) -> LLMResponse:
@@ -975,7 +985,8 @@ class AgentRunner:
                 _generation_delta(delta)
                 if delta:
                     context.streamed_content = True
-                await hook.on_stream(context, delta)
+                if not suppress_stream:
+                    await hook.on_stream(context, delta)
 
             async def _thinking(delta: str) -> None:
                 nonlocal thinking_buf
@@ -988,7 +999,8 @@ class AgentRunner:
                 incremental = new_clean[len(prev_clean):]
                 if incremental:
                     context.streamed_reasoning = True
-                    await hook.emit_reasoning(incremental)
+                    if not suppress_stream:
+                        await hook.emit_reasoning(incremental)
 
             async def _stream_recover() -> None:
                 _pause_generation()
@@ -1023,7 +1035,8 @@ class AgentRunner:
 
                 if incremental:
                     if progress_state["reasoning_open"]:
-                        await hook.emit_reasoning_end()
+                        if not suppress_stream:
+                            await hook.emit_reasoning_end()
                         progress_state["reasoning_open"] = False
                     context.streamed_content = True
                     callback = progress_callback
@@ -1077,9 +1090,35 @@ class AgentRunner:
             response.ttft_ms = max(0, round((first_output_at - request_started_at) * 1000))
         if generation_elapsed_s > 0:
             response.generation_ms = max(1, round(generation_elapsed_s * 1000))
-        # chat_stream_with_retry may recover internally, so only fail unfinished
-        # hosted calls after the provider returns its final error response.
+        # Provider retry policies only classify known transient errors. Some
+        # custom providers return connection/protocol failures as ordinary error
+        # responses, so retry those here before they reach the turn finalizer.
         if response.finish_reason == "error":
+            error_text = (response.content or "").lower()
+            retryable = any(marker in error_text for marker in _RETRYABLE_MODEL_ERROR_MARKERS)
+            if retryable and error_retry_count < _MAX_MODEL_ERROR_RETRIES:
+                next_attempt = error_retry_count + 1
+                error_detail = " ".join((response.content or "").split())[:240]
+                retry_status = (
+                    f"Model request failed; retrying ({next_attempt}/"
+                    f"{_MAX_MODEL_ERROR_RETRIES}): {error_detail}"
+                )
+                logger.warning(retry_status)
+                if spec.retry_wait_callback is not None:
+                    await spec.retry_wait_callback(retry_status)
+                if hook.wants_streaming() and context.streamed_content:
+                    await hook.on_stream_end(context, resuming=True)
+                return await self._request_model(
+                    spec,
+                    messages,
+                    hook,
+                    context,
+                    malformed_retry=malformed_retry,
+                    error_retry_count=next_attempt,
+                    suppress_stream=True,
+                    conversation_state=conversation_state,
+                    provider_context=provider_context,
+                )
             for event in list(active_hosted_tools.values()):
                 await _provider_tool_event({
                     **event,

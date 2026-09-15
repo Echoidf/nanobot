@@ -88,6 +88,7 @@ def test_webui_session_list_indexes_workspace_scope_and_preserves_null(
     project.mkdir()
 
     scoped = manager.get_or_create("websocket:scoped")
+    scoped.metadata["agent_id"] = "writer"
     scoped.metadata[WORKSPACE_SCOPE_METADATA_KEY] = {
         "project_path": str(project),
         "access_mode": "full",
@@ -101,6 +102,8 @@ def test_webui_session_list_indexes_workspace_scope_and_preserves_null(
 
     rows = {row["key"]: row for row in list_webui_sessions(manager)}
 
+    assert rows["websocket:scoped"]["agent_id"] == "writer"
+    assert rows["websocket:missing"]["agent_id"] == "default"
     assert session_list_index.indexed_workspace_scope(rows["websocket:scoped"]) == (
         True,
         {"project_path": str(project), "access_mode": "full"},

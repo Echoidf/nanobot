@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { useSidebarState } from "@/hooks/useSidebarState";
-import type { NanobotClient } from "@/lib/nanobot-client";
-import type { SidebarStatePayload } from "@/lib/types";
+import type { NanodeskClient } from "@/lib/nanodesk-client";
+import type { ChatSummary, SidebarStatePayload } from "@/lib/types";
 import { ClientProvider } from "@/providers/ClientProvider";
 
 describe("useSidebarState", () => {
@@ -28,7 +28,7 @@ describe("useSidebarState", () => {
         };
       },
       setSidebarState,
-    } as unknown as NanobotClient;
+    } as unknown as NanodeskClient;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -66,4 +66,57 @@ describe("useSidebarState", () => {
       title_overrides: { "websocket:a": "Second" },
     }));
   });
+
+  it("keeps removed projects while their folder still has topics", async () => {
+    const client = {
+      status: "open" as const,
+      onStatus: () => () => {},
+      onSidebarStateUpdate: () => () => {},
+      setSidebarState: vi.fn(async (state: SidebarStatePayload) => state),
+    } as unknown as NanodeskClient;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        hidden_project_keys: ["/Users/me/alpha/", "/Users/me/gone"],
+        collapsed_groups: {
+          "project:/Users/me/alpha": true,
+          "project:/Users/me/gone": true,
+        },
+      }),
+    }));
+    const sessions = [{
+      key: "websocket:alpha",
+      channel: "websocket",
+      chatId: "alpha",
+      createdAt: "2026-05-20T10:00:00Z",
+      updatedAt: "2026-05-20T10:00:00Z",
+      preview: "",
+      workspaceScope: {
+        project_path: "/Users/me/alpha",
+        project_name: "Alpha",
+        access_mode: "restricted" as const,
+      },
+    }] as ChatSummary[];
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ClientProvider client={client} token="token">
+        {children}
+      </ClientProvider>
+    );
+    const { result } = renderHook(() => useSidebarState(sessions, true), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.state.hidden_project_keys).toEqual(["/Users/me/alpha"]);
+    expect(result.current.state.collapsed_groups).toEqual({
+      "project:/Users/me/alpha": true,
+    });
+    await waitFor(() => expect(setSidebarStateWrite(client)).toEqual(
+      expect.objectContaining({ hidden_project_keys: ["/Users/me/alpha"] }),
+    ));
+  });
 });
+
+function setSidebarStateWrite(client: NanodeskClient): unknown {
+  const mock = (client.setSidebarState as unknown as ReturnType<typeof vi.fn>);
+  return mock.mock.calls[mock.mock.calls.length - 1]?.[0];
+}

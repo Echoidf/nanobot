@@ -383,6 +383,44 @@ def test_explicit_skill_references_resolve_available_enabled_names_in_order(
     assert invoked == ["alpha"]
 
 
+def test_default_workspace_skills_are_available_from_project_workspace(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    default = tmp_path / "default"
+    project.mkdir()
+    default_skills = default / "skills"
+    default_skill = _write_skill(default_skills, "modlens", body="# Default ModLens")
+
+    loader = SkillsLoader(project, default_workspace=default)
+
+    assert loader.list_skills(filter_unavailable=False) == [
+        {
+            "name": "modlens",
+            "path": str(default_skill),
+            "source": "default_workspace",
+        },
+    ]
+    assert loader.get_explicitly_invoked_skills("Use $modlens here.") == ["modlens"]
+    assert "# Default ModLens" in (loader.load_skill("modlens") or "")
+
+
+def test_project_skill_overrides_same_named_default_workspace_skill(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    default = tmp_path / "default"
+    project_skills = project / "skills"
+    default_skills = default / "skills"
+    project_skills.mkdir(parents=True)
+    default_skills.mkdir(parents=True)
+    _write_skill(project_skills, "modlens", body="# Project ModLens")
+    _write_skill(default_skills, "modlens", body="# Default ModLens")
+
+    loader = SkillsLoader(project, default_workspace=default)
+
+    entries = loader.list_skills(filter_unavailable=False)
+    assert len(entries) == 1
+    assert entries[0]["source"] == "workspace"
+    assert "# Project ModLens" in (loader.load_skill("modlens") or "")
+
+
 def test_multiple_explicit_skills_share_one_ordered_runtime_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     skills_root = workspace / "skills"

@@ -83,7 +83,7 @@ describe("Settings providers", () => {
 
     expect(
       screen.getByText(
-        "Complete sign-in in your browser. Nanobot usually finishes automatically; if it does not, paste the authorization code below.",
+        "Complete sign-in in your browser. Nanodesk usually finishes automatically; if it does not, paste the authorization code below.",
       ),
     ).toBeInTheDocument();
     const callbackInput = await screen.findByRole("textbox", {
@@ -261,7 +261,7 @@ describe("Settings providers", () => {
     expect(openMock).not.toHaveBeenCalled();
     expect(
       within(dialog).getByText(
-        "Complete sign-in in your browser. Nanobot usually finishes automatically; if it does not, copy the full localhost callback URL from the address bar and paste it below.",
+        "Complete sign-in in your browser. Nanodesk usually finishes automatically; if it does not, copy the full localhost callback URL from the address bar and paste it below.",
       ),
     ).toBeInTheDocument();
     expect(within(dialog).getByText("Waiting for the browser callback…")).toBeInTheDocument();
@@ -349,7 +349,7 @@ describe("Settings providers", () => {
       await chooseProviderToConfigure("OpenAI Codex");
       expect(
         screen.getByText(
-          "Sign in through this browser, then paste the full localhost callback URL back into nanobot.",
+          "Sign in through this browser, then paste the full localhost callback URL back into nanodesk.",
         ),
       ).toBeInTheDocument();
 
@@ -845,5 +845,115 @@ describe("Settings providers", () => {
     expect(
       screen.getByRole("button", { name: "Add your own model provider" }),
     ).toBeInTheDocument();
+  });
+
+  it("deletes a custom provider after confirming the reset dialog", async () => {
+    const base = settingsPayload();
+    const provider = {
+      name: "custom-company-gateway",
+      label: "Company Gateway",
+      is_custom: true,
+      configured: true,
+      api_key_required: false,
+      api_key_hint: "sk-c••••pany",
+      api_base: "https://gateway.example/v1",
+      default_api_base: null,
+    };
+    let payload: SettingsPayload = {
+      ...base,
+      providers: [provider],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/settings") return jsonResponse(payload);
+      if (url === "/api/settings/cli-apps") {
+        return jsonResponse({ apps: [], installed_count: 0 });
+      }
+      if (url === "/api/settings/mcp-presets") {
+        return jsonResponse({ presets: [], installed_count: 0 });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    requestMutationMock.mockImplementationOnce(async (action: string) => {
+      expect(action).toBe("settings.provider.delete");
+      payload = { ...payload, providers: [] };
+      return payload;
+    });
+
+    renderSettingsView({ initialSection: "models", initialSettings: payload });
+
+    // Wait for the providers section to render fully before clicking.
+    await screen.findByRole("button", { name: /Company Gateway/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /Company Gateway/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete provider" }));
+
+    expect(
+      screen.getByText("Delete custom provider?"),
+    ).toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete provider" }));
+
+    await waitFor(() =>
+      expect(requestMutationMock).toHaveBeenCalledWith(
+        "settings.provider.delete",
+        { provider: "custom-company-gateway" },
+        20_000,
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /Company Gateway/ }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("cancels provider deletion without calling the backend", async () => {
+    const base = settingsPayload();
+    const provider = {
+      name: "openrouter",
+      label: "OpenRouter",
+      configured: true,
+      api_key_required: true,
+      api_key_hint: "sk-or••••test",
+      api_base: "https://openrouter.ai/api/v1",
+    };
+    const payload: SettingsPayload = { ...base, providers: [provider] };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/settings") return jsonResponse(payload);
+      if (url === "/api/settings/cli-apps") {
+        return jsonResponse({ apps: [], installed_count: 0 });
+      }
+      if (url === "/api/settings/mcp-presets") {
+        return jsonResponse({ presets: [], installed_count: 0 });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderSettingsView({ initialSection: "models", initialSettings: payload });
+
+    fireEvent.click(screen.getByRole("button", { name: /OpenRouter/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete provider" }));
+
+    expect(screen.getByText("Reset provider?")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Reset provider?"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(requestMutationMock).not.toHaveBeenCalledWith(
+      "settings.provider.delete",
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

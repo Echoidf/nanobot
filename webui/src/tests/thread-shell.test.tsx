@@ -7,7 +7,7 @@ import { preloadMarkdownText } from "@/components/MarkdownText";
 import { ThreadCameraController } from "@/components/thread/thread-camera";
 import { ThreadShell } from "@/components/thread/ThreadShell";
 import { CLI_APPS_CHANGED_EVENT } from "@/lib/cli-app-events";
-import type { CanonicalRunSnapshot, StreamError } from "@/lib/nanobot-client";
+import type { CanonicalRunSnapshot, StreamError } from "@/lib/nanodesk-client";
 import { ClientProvider } from "@/providers/ClientProvider";
 import type { CliAppsPayload, ConnectionStatus, SettingsPayload, UIMessage } from "@/lib/types";
 
@@ -194,7 +194,7 @@ function wrap(
 ) {
   return (
     <ClientProvider
-      client={client as unknown as import("@/lib/nanobot-client").NanobotClient}
+      client={client as unknown as import("@/lib/nanodesk-client").NanodeskClient}
       token={token}
       modelName={modelName ?? null}
     >
@@ -1007,7 +1007,7 @@ describe("ThreadShell", () => {
           client,
           <ThreadShell
             session={null}
-            title="nanobot"
+            title="nanodesk"
             onToggleSidebar={() => {}}
             onGoHome={() => {}}
             onNewChat={onNewChat}
@@ -1032,7 +1032,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onGoHome={() => {}}
           onNewChat={onNewChat}
@@ -1067,7 +1067,7 @@ describe("ThreadShell", () => {
     const view = (currentSession: ReturnType<typeof session> | null) => wrap(client, (
       <ThreadShell
         session={currentSession}
-        title={currentSession ? "New chat" : "nanobot"}
+        title={currentSession ? "New chat" : "nanodesk"}
         onToggleSidebar={() => {}}
         onCreateChat={onCreateChat}
         settingsSnapshot={settings}
@@ -1113,7 +1113,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onCreateChat={onCreateChat}
         />,
@@ -1183,7 +1183,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onCreateChat={onCreateChat}
         />,
@@ -1248,7 +1248,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onCreateChat={onCreateChat}
         />,
@@ -1316,7 +1316,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onGoHome={() => {}}
           onNewChat={() => {}}
@@ -1575,7 +1575,7 @@ describe("ThreadShell", () => {
           client,
           <ThreadShell
             session={null}
-            title="nanobot"
+            title="nanodesk"
             onToggleSidebar={() => {}}
             onNewChat={() => {}}
           />,
@@ -3445,7 +3445,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onNewChat={() => {}}
         />,
@@ -3514,7 +3514,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onNewChat={() => {}}
         />,
@@ -3544,7 +3544,7 @@ describe("ThreadShell", () => {
         client,
         <ThreadShell
           session={null}
-          title="nanobot"
+          title="nanodesk"
           onToggleSidebar={() => {}}
           onNewChat={() => {}}
           settingsSnapshot={{

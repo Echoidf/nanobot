@@ -9,10 +9,12 @@ import {
   Brain,
   CalendarClock,
   Menu,
+  Plug,
   Search,
   Settings,
   SquarePen,
   Blocks,
+  Bot,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -60,13 +62,19 @@ interface SidebarProps {
   onToggleGroup: (groupId: string) => void;
   onRequestRenameProject: (projectKey: string, label: string) => void;
   onNewChatInProject: (projectPath: string, projectName: string) => void;
+  onRequestRemoveProject?: (projectKey: string) => void;
+  onRequestDeleteProject?: (projectKey: string, label: string) => void;
+  onRestoreProject?: (projectKey: string) => void;
   onOpenSettings: () => void;
   onOpenApps: () => void;
   onOpenSkills: () => void;
   onOpenAutomations: () => void;
+  onOpenAgents: () => void;
+  onOpenMcp: () => void;
+  onMcpIntent?: () => void;
   onSettingsIntent?: () => void;
   onOpenSearch: () => void;
-  activeUtility?: "apps" | "skills" | "automations" | null;
+  activeUtility?: "apps" | "skills" | "automations" | "agents" | "mcp" | null;
   onToggleArchived: () => void;
   onCollapse: () => void;
   onExpand?: () => void;
@@ -79,6 +87,7 @@ interface SidebarProps {
   sessionOrder?: string[];
   titleOverrides?: Record<string, string>;
   projectNameOverrides?: Record<string, string>;
+  hiddenProjectKeys?: string[];
   collapsedGroups?: Record<string, boolean>;
   runningChatIds?: string[];
   updatedChatIds?: string[];
@@ -87,6 +96,7 @@ interface SidebarProps {
   archivedCount?: number;
   defaultWorkspacePath?: string | null;
   hostChromeInset?: boolean;
+  siteTitle?: string | null;
 }
 
 type NavigatorWithUserAgentData = Navigator & {
@@ -124,7 +134,7 @@ export function Sidebar(props: SidebarProps) {
       ref={props.containActionMenus ? setMenuPortalContainer : undefined}
       aria-label={t("sidebar.navigation")}
       className={cn(
-        "flex h-full w-full min-w-0 flex-col text-sidebar-foreground",
+        "flex h-full w-full min-w-0 flex-col border-r border-sidebar-border/70 text-sidebar-foreground",
         props.hostChromeInset ? "bg-transparent" : "bg-sidebar",
       )}
     >
@@ -143,18 +153,23 @@ export function Sidebar(props: SidebarProps) {
           onClick={collapsed ? props.onExpand : undefined}
           tabIndex={collapsed ? 0 : -1}
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors",
+            "flex h-9 shrink-0 items-center overflow-hidden rounded-xl transition-colors",
             collapsed
-              ? "-ml-0.5 hover:bg-sidebar-accent/75"
-              : "pointer-events-none -ml-0.5",
+              ? "w-9 -ml-0.5 justify-center hover:bg-sidebar-accent/75"
+              : "w-auto gap-2 -ml-0.5 pointer-events-none",
           )}
         >
           <img
-            src="/brand/nanobot_mark.svg"
+            src="/brand/nanodesk_favicon.svg"
             alt=""
-            className="h-8 w-8 select-none object-contain"
-            draggable={false}
+            aria-hidden
+            className="h-8 w-8 shrink-0 rounded-lg"
           />
+          {!collapsed && (props.siteTitle ?? "").trim() ? (
+            <span className="truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">
+              {props.siteTitle!.trim()}
+            </span>
+          ) : null}
         </button>
         {!collapsed && !props.hostChromeInset && (
           <Button
@@ -214,6 +229,23 @@ export function Sidebar(props: SidebarProps) {
         />
         <SidebarActionButton
           collapsed={collapsed}
+          label={t("sidebar.mcp", { defaultValue: "MCP Server" })}
+          onClick={props.onOpenMcp}
+          onIntent={props.onMcpIntent}
+          active={props.activeUtility === "mcp"}
+          selectionRef={activeActionRef}
+          icon={<Plug className="h-4 w-4" />}
+        />
+        <SidebarActionButton
+          collapsed={collapsed}
+          label={t("sidebar.agents", { defaultValue: "Agents" })}
+          onClick={props.onOpenAgents}
+          active={props.activeUtility === "agents"}
+          selectionRef={activeActionRef}
+          icon={<Bot className="h-4 w-4" />}
+        />
+        <SidebarActionButton
+          collapsed={collapsed}
           label={t("sidebar.automations", { defaultValue: "Automations" })}
           onClick={props.onOpenAutomations}
           onIntent={props.onSettingsIntent}
@@ -260,6 +292,9 @@ export function Sidebar(props: SidebarProps) {
             onToggleGroup={props.onToggleGroup}
             onRequestRenameProject={props.onRequestRenameProject}
             onNewChatInProject={props.onNewChatInProject}
+            onRequestRemoveProject={props.onRequestRemoveProject}
+            onRequestDeleteProject={props.onRequestDeleteProject}
+            onRestoreProject={props.onRestoreProject}
             pinnedKeys={props.pinnedKeys}
             archivedKeys={props.archivedKeys}
             pinnedPaneKeys={props.pinnedPaneKeys}
@@ -267,6 +302,7 @@ export function Sidebar(props: SidebarProps) {
             sessionOrder={props.sessionOrder}
             titleOverrides={props.titleOverrides}
             projectNameOverrides={props.projectNameOverrides}
+            hiddenProjectKeys={props.hiddenProjectKeys}
             collapsedGroups={props.collapsedGroups}
             runningChatIds={props.runningChatIds}
             updatedChatIds={props.updatedChatIds}

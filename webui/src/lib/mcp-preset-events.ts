@@ -1,6 +1,6 @@
 import type { McpPresetInfo, McpPresetsPayload } from "@/lib/types";
 
-export const MCP_PRESETS_CHANGED_EVENT = "nanobot:mcp-presets-changed";
+export const MCP_PRESETS_CHANGED_EVENT = "nanodesk:mcp-presets-changed";
 
 export function isMcpPresetsPayload(value: unknown): value is McpPresetsPayload {
   return !!value
@@ -11,6 +11,7 @@ export function isMcpPresetsPayload(value: unknown): value is McpPresetsPayload 
 export function installedMcpPresetsFromPayload(payload: McpPresetsPayload): McpPresetInfo[] {
   return payload.presets.filter(
     (preset) => preset.source !== "agent-plugin"
+      && preset.server_enabled !== false
       && (preset.enabled ?? (preset.installed && preset.configured)),
   );
 }

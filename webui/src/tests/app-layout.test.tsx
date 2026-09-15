@@ -230,8 +230,8 @@ vi.mock("@/lib/bootstrap", () => ({
   clearSavedSecret: vi.fn(),
 }));
 
-vi.mock("@/lib/nanobot-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/nanobot-client")>();
+vi.mock("@/lib/nanodesk-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/nanodesk-client")>();
   class MockClient {
     status = "idle" as const;
     defaultChatId: string | null = null;
@@ -274,7 +274,7 @@ vi.mock("@/lib/nanobot-client", async (importOriginal) => {
     updateMaxFrameBytes = vi.fn();
   }
 
-  return { ...actual, NanobotClient: MockClient };
+  return { ...actual, NanodeskClient: MockClient };
 });
 
 import {
@@ -312,12 +312,12 @@ describe("App layout", () => {
     sidebarStateUpdateHandlers.clear();
     window.history.replaceState(null, "", "/");
     setNavigatorPlatform("Linux x86_64");
-    localStorage.removeItem("nanobot-webui.sidebar");
-    localStorage.removeItem("nanobot-webui.sidebar.completed-runs.v1");
-    localStorage.removeItem("nanobot-webui.sidebar.session-updates.v1");
-    localStorage.removeItem("nanobot-webui.collapsed-pane-groups.v1");
-    localStorage.removeItem("nanobot-webui.restartStartedAt");
-    localStorage.removeItem("nanobot-webui.restartRoute");
+    localStorage.removeItem("nanodesk-webui.sidebar");
+    localStorage.removeItem("nanodesk-webui.sidebar.completed-runs.v1");
+    localStorage.removeItem("nanodesk-webui.sidebar.session-updates.v1");
+    localStorage.removeItem("nanodesk-webui.collapsed-pane-groups.v1");
+    localStorage.removeItem("nanodesk-webui.restartStartedAt");
+    localStorage.removeItem("nanodesk-webui.restartRoute");
     vi.mocked(fetchBootstrap).mockReset().mockResolvedValue({
       token: "tok",
       api_token: "api-tok",
@@ -588,7 +588,7 @@ describe("App layout", () => {
     expect(within(screen.getByTestId("thread-header")).getByText(
       "first private message",
     )).toBeInTheDocument();
-    await waitFor(() => expect(document.title).toBe("first private message · nanobot"));
+    await waitFor(() => expect(document.title).toBe("first private message · NanoDesk"));
     expect(screen.queryByRole("button", { name: "Temporary chat" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sidebar).getByRole("button", {
@@ -770,6 +770,88 @@ describe("App layout", () => {
     });
   });
 
+  it("keeps the current project for @ file mentions when starting a new topic", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/workspaces") && !url.includes("/workspace/files")) {
+        return jsonResponse({
+          schema_version: 1,
+          default_access_mode: "restricted",
+          default_scope: {
+            project_path: "/tmp/default-workspace",
+            project_name: "default-workspace",
+            access_mode: "restricted",
+            restrict_to_workspace: true,
+          },
+          controls: { can_change_project: true, can_use_full_access: true },
+        });
+      }
+      if (url.includes("/api/webui/workspace/files")) {
+        return jsonResponse({
+          dir: ".",
+          project_path: "/tmp/project-a",
+          items: [
+            { name: "README.md", path: "README.md", kind: "file" },
+            { name: "src", path: "src", kind: "folder" },
+          ],
+        });
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockSessions = [
+      {
+        key: "websocket:alpha",
+        channel: "websocket",
+        chatId: "alpha",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+        title: "Alpha",
+        preview: "existing chat",
+        workspaceScope: {
+          project_path: "/tmp/project-a",
+          project_name: "project-a",
+          access_mode: "restricted",
+          restrict_to_workspace: true,
+        },
+      },
+    ];
+
+    try {
+      window.location.hash = "#/chat/websocket%3Aalpha";
+      render(<App />);
+
+      await waitFor(() => expect(connectSpy).toHaveBeenCalled());
+      expect(await screen.findByRole("button", { name: "Alpha" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "New topic" }));
+      await waitFor(() => expect(window.location.hash).toBe("#/new"));
+
+      const input = screen.getByLabelText("Message input");
+      fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+      await waitFor(() => {
+        expect(
+          fetchMock.mock.calls.some(([request]) => (
+            String(request).includes("/api/webui/workspace/files")
+            && String(request).includes("project_path=%2Ftmp%2Fproject-a")
+          )),
+        ).toBe(true);
+      });
+
+      expect(
+        await screen.findByRole("option", {
+          name: /src\/ @src Workspace folder/i,
+        }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+      mockSessions = [];
+      window.location.hash = "";
+    }
+  });
+
   it("preserves the first message when the gateway rejects a project", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     createChatSpy.mockRejectedValueOnce(
@@ -822,12 +904,12 @@ describe("App layout", () => {
   });
 
   it("restores the Settings route after a restart fallback hash", async () => {
-    localStorage.setItem("nanobot-webui.restartStartedAt", String(Date.now()));
-    localStorage.setItem("nanobot-webui.restartRoute", "#/settings?section=channels");
+    localStorage.setItem("nanodesk-webui.restartStartedAt", String(Date.now()));
+    localStorage.setItem("nanodesk-webui.restartRoute", "#/settings?section=channels");
     window.history.replaceState(null, "", "/#/new");
     mockFetchRoutes({
       "/api/settings": baseSettingsPayload(),
-      "/api/settings/nanobot-features": {
+      "/api/settings/nanodesk-features": {
         features: [{
           name: "websocket",
           display_name: "Websocket",
@@ -971,7 +1053,7 @@ describe("App layout", () => {
       "aria-current",
       "page",
     );
-    expect(document.title).toBe("Skills · nanobot");
+    expect(document.title).toBe("Skills · NanoDesk");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(await screen.findByText(HERO_GREETING_PATTERN)).toBeInTheDocument();
@@ -1443,7 +1525,7 @@ describe("App layout", () => {
       "aria-current",
       "page",
     );
-    expect(document.title).toBe("Automations · nanobot");
+    expect(document.title).toBe("Automations · NanoDesk");
 
     const searchInput = within(automationsMain as HTMLElement).getByPlaceholderText(
       "Search task, message, linked chat, or schedule",
@@ -1667,7 +1749,7 @@ describe("App layout", () => {
     expect(screen.queryByText("近期无问题")).not.toBeInTheDocument();
     expect(screen.queryByText("Workspace automations")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
-    expect(document.title).toBe("自动任务 · nanobot");
+    expect(document.title).toBe("自动任务 · NanoDesk");
   });
 
   it("fully collapses the native host sidebar and previews it on hover", async () => {
@@ -2045,7 +2127,7 @@ describe("App layout", () => {
         chatId: "new",
         createdAt: "2026-04-15T12:00:00Z",
         updatedAt: "2026-04-15T12:00:00Z",
-        preview: "hi nanobot",
+        preview: "hi nanodesk",
       },
       {
         key: "websocket:alpha",
@@ -2268,7 +2350,7 @@ describe("App layout", () => {
       },
     ];
     localStorage.setItem(
-      "nanobot-webui.sidebar.session-updates.v1",
+      "nanodesk-webui.sidebar.session-updates.v1",
       JSON.stringify(["chat-b"]),
     );
 
@@ -2311,7 +2393,7 @@ describe("App layout", () => {
     render(<App />);
 
     await waitFor(() => expect(connectSpy).toHaveBeenCalled());
-    await waitFor(() => expect(document.title).toBe("Active after reload · nanobot"));
+    await waitFor(() => expect(document.title).toBe("Active after reload · NanoDesk"));
     const sidebar = screen.getByRole("navigation", { name: "Sidebar navigation" });
     expect(
       within(sidebar).getByRole("button", { name: /^Active after reload$/ }),
@@ -2346,7 +2428,7 @@ describe("App layout", () => {
             port: 8900,
             timeout: 120,
             endpoint: "http://127.0.0.1:8900/v1",
-            command: "nanobot serve",
+            command: "nanodesk serve",
           });
         }
         if (href === "/api/settings/provider-models?provider=openai") {
@@ -2558,7 +2640,7 @@ describe("App layout", () => {
     );
 
     localStorage.setItem(
-      "nanobot-webui.settings-preferences",
+      "nanodesk-webui.settings-preferences",
       JSON.stringify({ brandLogos: true }),
     );
     render(<App />);
@@ -2574,12 +2656,12 @@ describe("App layout", () => {
       await screen.findByRole("navigation", { name: "Settings sections" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Overview" })).not.toBeInTheDocument();
-    expect(document.title).toBe("Settings · nanobot");
+    expect(document.title).toBe("Settings · NanoDesk");
     expect(screen.getByTestId("overview-logo-openai")).toBeInTheDocument();
     expect(screen.getByTestId("overview-logo-brave")).toBeInTheDocument();
     expect(screen.getByTestId("overview-logo-openrouter")).toBeInTheDocument();
-    expect(screen.queryByTestId("overview-logo-nanobot-gateway")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("overview-logo-nanobot-workspace")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overview-logo-nanodesk-gateway")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overview-logo-nanodesk-workspace")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Sidebar navigation" })).not.toBeInTheDocument();
     const settingsNav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(settingsNav.className).not.toContain("overflow-x-auto");
@@ -2645,7 +2727,7 @@ describe("App layout", () => {
     expect(screen.queryByText("Ant Ling")).not.toBeInTheDocument();
     expect(
       screen.queryByText(
-        "Bring your own provider keys. Nanobot reads these values from the current config and only configured providers can be used in model presets.",
+        "Bring your own provider keys. Nanodesk reads these values from the current config and only configured providers can be used in model presets.",
       ),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("azure_openai")).not.toBeInTheDocument();
@@ -2729,7 +2811,7 @@ describe("App layout", () => {
       screen.queryByText("Used for schedules and time-aware replies."),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Restart nanobot to apply runtime changes."),
+      screen.queryByText("Restart nanodesk to apply runtime changes."),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Bot name")).not.toBeInTheDocument();
     expect(screen.queryByText("Bot icon")).not.toBeInTheDocument();
@@ -2783,12 +2865,12 @@ describe("App layout", () => {
     expect(systemSection).not.toBeNull();
     const system = within(systemSection as HTMLElement);
     const timezoneLabel = system.getByText("Timezone");
-    const restartButton = system.getByRole("button", { name: "Restart nanobot" });
+    const restartButton = system.getByRole("button", { name: "Restart workspace" });
     expect(
       timezoneLabel.compareDocumentPosition(restartButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      system.queryByText("Restart nanobot to apply runtime changes."),
+      system.queryByText("Restart nanodesk to apply runtime changes."),
     ).not.toBeInTheDocument();
   });
 
@@ -2873,7 +2955,7 @@ describe("App layout", () => {
     fireEvent.click(appsButton);
 
     expect(await screen.findByRole("heading", { name: "Apps" })).toBeInTheDocument();
-    expect(screen.queryByText("Add tools to nanobot, then @ them in chat.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add tools to nanodesk, then @ them in chat.")).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Sidebar navigation" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Apps" })).toHaveAttribute(
@@ -2896,7 +2978,7 @@ describe("App layout", () => {
       "duration-200",
       "motion-reduce:animate-none",
     );
-    expect(document.title).toBe("Apps · nanobot");
+    expect(document.title).toBe("Apps · NanoDesk");
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
 
@@ -2916,7 +2998,7 @@ describe("App layout", () => {
       "data-active-id",
       "utility:skills",
     );
-    expect(document.title).toBe("Skills · nanobot");
+    expect(document.title).toBe("Skills · NanoDesk");
   });
 
   it("returns from settings to the blank start page when no session was active", async () => {
@@ -3052,7 +3134,7 @@ describe("App layout", () => {
     await waitFor(() => expect(connectSpy).toHaveBeenCalled());
     const sidebar = screen.getByRole("navigation", { name: "Sidebar navigation" });
     fireEvent.click(within(sidebar).getByRole("button", { name: "New topic" }));
-    await waitFor(() => expect(document.title).toBe("nanobot"));
+    await waitFor(() => expect(document.title).toBe("NanoDesk"));
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Settings" }));
     expect(
@@ -3060,7 +3142,7 @@ describe("App layout", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
-    await waitFor(() => expect(document.title).toBe("nanobot"));
+    await waitFor(() => expect(document.title).toBe("NanoDesk"));
     expect(screen.getByText(HERO_GREETING_PATTERN)).toBeInTheDocument();
   });
 

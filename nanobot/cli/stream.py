@@ -43,10 +43,32 @@ def _make_console() -> Console:
     return Console(file=sys.stdout, force_terminal=sys.stdout.isatty())
 
 
+_IMAGE_ICON_SUFFIXES = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico")
+_IMAGE_ICON_PREFIXES = ("/", "./", "../", "http://", "https://", "data:image/")
+
+
+def terminal_icon(icon: str) -> str:
+    """Return the icon text usable in a terminal, or '' for WebUI image assets.
+
+    Brand icons are served as image paths (e.g. ``/brand/nanodesk_favicon.svg``);
+    printing those next to the bot name would leak a URL into CLI output, so the
+    terminal falls back to the bare name.
+    """
+    value = (icon or "").strip()
+    if not value:
+        return ""
+    lowered = value.lower()
+    if lowered.startswith(_IMAGE_ICON_PREFIXES):
+        return ""
+    if lowered.split("?", 1)[0].endswith(_IMAGE_ICON_SUFFIXES):
+        return ""
+    return value
+
+
 class ThinkingSpinner:
     """Spinner that shows '<bot_name> is thinking...' with pause support."""
 
-    def __init__(self, console: Console | None = None, bot_name: str = "nanobot"):
+    def __init__(self, console: Console | None = None, bot_name: str = "NanoDesk"):
         c = console or _make_console()
         self._console = c
         self._spinner = c.status(f"[dim]{bot_name} is thinking...[/dim]", spinner="dots")
@@ -96,8 +118,8 @@ class StreamRenderer:
         self,
         render_markdown: bool = True,
         show_spinner: bool = True,
-        bot_name: str = "nanobot",
-        bot_icon: str = "🐈",
+        bot_name: str = "NanoDesk",
+        bot_icon: str = "/brand/nanodesk_favicon.svg",
     ):
         self._md = render_markdown
         self._show_spinner = show_spinner
@@ -152,7 +174,8 @@ class StreamRenderer:
         if self._header_printed:
             return
         self._console.print()
-        header = f"{self._bot_icon} {self._bot_name}" if self._bot_icon else self._bot_name
+        icon = terminal_icon(self._bot_icon)
+        header = f"{icon} {self._bot_name}" if icon else self._bot_name
         self._console.print(f"[cyan]{header}[/cyan]")
         self._header_printed = True
 

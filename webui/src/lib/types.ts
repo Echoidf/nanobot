@@ -9,6 +9,7 @@ export type MessageDeliveryStatus = "sending" | "accepted" | "failed";
 export type MessageDeliveryErrorKind =
   | "message_too_big"
   | "workspace_scope_rejected"
+  | "agent_rejected"
   | "turn_rejected";
 
 /** One image attached to a UIMessage.
@@ -66,6 +67,7 @@ export interface UIMessage {
   mcpPresets?: UIMcpPresetAttachment[];
   /** Persisted sessions explicitly referenced by this user turn. */
   sessionMentions?: SessionMention[];
+  pathRefs?: Array<{ path: string; kind: "file" | "folder" }>;
   /** Assistant turn: accumulated model reasoning / thinking text. Built up
    * incrementally from ``reasoning_delta`` frames; finalized when
    * ``reasoning_end`` arrives. */
@@ -356,6 +358,41 @@ export interface UIFileEdit {
   diff?: UIFileDiff;
 }
 
+export interface AgentToolPayload {
+  name: string;
+  description?: string;
+}
+
+export interface AgentSkillPayload {
+  name: string;
+  source?: string;
+}
+
+export interface AgentProfilePayload {
+  id: string;
+  name: string;
+  icon?: string | null;
+  description: string;
+  status: string;
+  model_preset?: string | null;
+  system_prompt?: string | null;
+  skills: string[];
+  tools: AgentToolPayload[];
+  tool_names: string[];
+  capabilities_ok: boolean;
+  missing_skills: string[];
+  disabled_skills: string[];
+  missing_tools: string[];
+}
+
+export interface AgentsPayload {
+  schema_version: number;
+  default_agent_id: string;
+  agents: AgentProfilePayload[];
+  skill_catalog: AgentSkillPayload[];
+  tool_catalog: AgentToolPayload[];
+}
+
 export interface ChatSummary {
   /** Server-side session key, e.g. ``websocket:abcd-...``. */
   key: string;
@@ -373,6 +410,7 @@ export interface ChatSummary {
   /** Unix epoch seconds when this session currently has a turn in flight. */
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;
+  agentId?: string | null;
   /** Stable, server-owned @handle for this session. */
   handle?: SessionHandle | null;
 }
@@ -440,6 +478,7 @@ export interface SidebarStatePayload {
   session_order: string[];
   title_overrides: Record<string, string>;
   project_name_overrides: Record<string, string>;
+  hidden_project_keys: string[];
   tags_by_key: Record<string, string[]>;
   collapsed_groups: Record<string, boolean>;
   workbench: WorkbenchState;
@@ -455,8 +494,10 @@ export interface BootstrapResponse {
   expires_in?: number;
   limits?: WebUIIngressLimits;
   model_name?: string | null;
+  site_title?: string | null;
   runtime_surface?: RuntimeSurface;
   runtime_capabilities?: RuntimeCapabilities;
+  agents?: AgentsPayload;
 }
 
 export interface WebUITransportLimits {
@@ -537,6 +578,29 @@ export interface ProviderOAuthPending {
 
 export type ProviderOAuthLoginResult = SettingsPayload | ProviderOAuthAuthorizationRequired;
 export type ProviderOAuthCompletionResult = SettingsPayload | ProviderOAuthPending;
+
+export interface RuntimeToolsPayload {
+  tools: Array<{
+    name: string;
+    description: string;
+    source: "builtin" | "mcp" | "runtime";
+    category: string;
+    parameter_count: number;
+    parameters: Array<{
+      name: string;
+      type: string;
+      required: boolean;
+      description: string | null;
+    }>;
+  }>;
+  counts: {
+    builtin: number;
+    mcp: number;
+    runtime: number;
+    total: number;
+  };
+  restrict_to_workspace: boolean;
+}
 
 export interface SettingsPayload {
   surface?: RuntimeSurface;
@@ -875,7 +939,7 @@ export interface CliAppsPayload {
   };
 }
 
-export interface NanobotFeatureInfo {
+export interface NanodeskFeatureInfo {
   name: string;
   display_name: string;
   capabilities?: string[];
@@ -890,7 +954,7 @@ export interface NanobotFeatureInfo {
   config_values?: Record<string, string>;
   configured_fields?: string[];
   setup?: ChannelSetupContract;
-  instances?: NanobotChannelInstanceInfo[];
+  instances?: NanodeskChannelInstanceInfo[];
   installed: boolean;
   ready: boolean;
   status: "enabled" | "missing_dependency" | "not_enabled" | string;
@@ -912,7 +976,7 @@ export interface ChannelSetupContract {
   official_url?: string;
 }
 
-export interface NanobotChannelInstanceInfo {
+export interface NanodeskChannelInstanceInfo {
   id: string;
   name: string;
   display_name?: string;
@@ -928,8 +992,8 @@ export interface NanobotChannelInstanceInfo {
 
 export type ChannelRuntimeStatus = "running" | "starting" | "failed" | "stopped" | string;
 
-export interface NanobotFeaturesPayload {
-  features: NanobotFeatureInfo[];
+export interface NanodeskFeaturesPayload {
+  features: NanodeskFeatureInfo[];
   enabled_count: number;
   requires_restart?: boolean;
   last_action?: {
@@ -1007,6 +1071,23 @@ export interface McpPresetField {
   env_var?: string | null;
 }
 
+export interface McpServerForm {
+  name: string;
+  transport: "stdio" | "streamableHttp" | "sse" | string;
+  auth?: "oauth" | null;
+  command: string;
+  args: string[];
+  cwd: string;
+  url: string;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  enabled_tools: string[];
+  tool_timeout: number;
+  enabled: boolean;
+  description: string;
+  docs_url: string;
+}
+
 export interface McpPresetInfo {
   name: string;
   display_name: string;
@@ -1021,8 +1102,12 @@ export interface McpPresetInfo {
   installed: boolean;
   configured: boolean;
   enabled?: boolean;
+  /** Soft toggle for configured MCP servers: the entry stays on disk when off. */
+  server_enabled?: boolean;
+  /** Editable, credential-redacted view of a configured server. */
+  form?: McpServerForm | null;
   available: boolean;
-  status: "not_installed" | "configured" | "missing_credentials" | "missing_dependency" | "coming_soon" | string;
+  status: "not_installed" | "configured" | "missing_credentials" | "missing_dependency" | "disabled" | "coming_soon" | string;
   runtime_status?: "connecting" | "connected" | "failed" | string;
   logo_url?: string | null;
   brand_color?: string | null;
@@ -1106,14 +1191,14 @@ export interface ChannelConnectPayload {
   expires_at_ms?: number;
   app_id?: string;
   account?: string;
-  nanobot_features?: NanobotFeaturesPayload;
+  nanodesk_features?: NanodeskFeaturesPayload;
 }
 
 export interface ChannelConfigurePayload {
   name: string;
   saved: boolean;
   saved_keys?: string[];
-  nanobot_features?: NanobotFeaturesPayload;
+  nanodesk_features?: NanodeskFeaturesPayload;
 }
 
 export interface SettingsUpdate {
@@ -1268,6 +1353,7 @@ export type InboundEvent =
       cli_apps?: UICliAppAttachment[];
       mcp_presets?: UIMcpPresetAttachment[];
       session_mentions?: SessionMention[];
+      path_refs?: Array<{ path: string; kind: "file" | "folder" }>;
       provenance?: { session_message?: UISessionMessage };
     }
   | ({
@@ -1362,6 +1448,7 @@ export type InboundEvent =
       chat_id: string;
       scope?: "metadata" | "thread" | string;
       workspace_scope?: WorkspaceScopePayload;
+      agent_id?: string;
     }
   | {
       event: "sidebar_state_updated";
@@ -1449,6 +1536,7 @@ export interface WebuiThreadPersistedPayload {
   active_turn_id?: string | null;
   page?: WebuiThreadPagePayload;
   workspace_scope?: WorkspaceScopePayload;
+  agent_id?: string;
 }
 
 export interface FilePreviewPayload {
@@ -1461,8 +1549,23 @@ export interface FilePreviewPayload {
   truncated: boolean;
 }
 
+export interface WorkspaceFileCandidate {
+  name: string;
+  path: string;
+  kind: "file" | "folder";
+  size?: number;
+  language?: string;
+  binary?: boolean;
+}
+
+export interface WorkspaceFilesPayload {
+  dir: string;
+  project_path: string;
+  items: WorkspaceFileCandidate[];
+}
+
 export type Outbound =
-  | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload }
+  | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload; agent_id?: string }
   | { type: "new_temporary_chat" }
   | {
       type: "webui_request";
@@ -1484,6 +1587,7 @@ export type Outbound =
       cli_apps?: OutboundCliAppMention[];
       mcp_presets?: OutboundMcpPresetMention[];
       session_mentions?: SessionMention[];
+      path_refs?: Array<{ path: string; kind: "file" | "folder" }>;
       quoted_context?: string;
       workspace_scope?: WorkspaceScopePayload;
       turn_id?: string;

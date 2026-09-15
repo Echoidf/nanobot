@@ -208,7 +208,7 @@ export function SkillsMarketplace({
             aria-label={t("settings.skills.marketplaceSearchLabel", {
               defaultValue: "Search skills",
             })}
-            className="h-11 rounded-control bg-settings-surface pl-9"
+            className="h-11 rounded-control border-border/55 bg-settings-surface pl-9"
           />
           {loading ? (
             <span
@@ -232,7 +232,7 @@ export function SkillsMarketplace({
       ) : null}
 
       {query.trim().length < 2 ? (
-        <section className="overflow-hidden rounded-panel bg-settings-surface">
+        <section className="overflow-hidden rounded-panel border border-border/55 bg-settings-surface">
           <div className="flex flex-col items-start gap-2 px-4 pb-2 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <h2 className="text-[14px] font-semibold">
               {t("settings.skills.marketplaceTrendingTitle", {
@@ -271,14 +271,14 @@ export function SkillsMarketplace({
           )}
         </section>
       ) : !loading && visibleResults.length === 0 && !error ? (
-        <div className="rounded-panel bg-settings-surface px-5 py-12 text-center text-sm text-muted-foreground">
+        <div className="rounded-panel border border-border/55 bg-settings-surface px-5 py-12 text-center text-sm text-muted-foreground">
           {t("settings.skills.marketplaceEmpty", {
             query: query.trim(),
             defaultValue: "No skills found for “{{query}}”.",
           })}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-panel bg-settings-surface">
+        <div className="overflow-hidden rounded-panel border border-border/55 bg-settings-surface">
           <MarketplaceSkillGroups
             skills={visibleResults}
             installedNames={installedNames}
@@ -499,7 +499,7 @@ function MarketplaceSkillRow({
   );
 
   return (
-    <div className="group flex min-w-0 items-center gap-2 px-1 py-3.5 sm:gap-3 sm:px-2">
+    <div className="group flex min-w-0 items-center gap-2 rounded-control border border-transparent px-2 py-3.5 transition-colors hover:border-border/45 hover:bg-muted/30 sm:gap-3 sm:px-3">
       {skill.rank ? (
         <span className="w-6 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground/65 sm:w-7 sm:text-[12px]">
           #{skill.rank}
@@ -519,7 +519,7 @@ function MarketplaceSkillRow({
               provider: providerLabel(skill.provider),
               defaultValue: "Open {{name}} on {{provider}}",
             })}
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           </a>
@@ -550,7 +550,7 @@ function MarketplaceSkillRow({
         disabled={installed || installBusy || !skill.install_supported}
         onClick={() => onSelect(skill)}
         className={cn(
-          "h-9 w-9 shrink-0 rounded-full bg-muted/70 text-muted-foreground transition-[opacity,color,background-color,transform] hover:scale-[1.03] hover:bg-foreground hover:text-background focus-visible:bg-foreground focus-visible:text-background focus-visible:opacity-100 sm:opacity-[0.55] sm:group-hover:opacity-100",
+          "h-9 w-9 shrink-0 rounded-control bg-muted/70 text-muted-foreground transition-[opacity,color,background-color,transform] hover:scale-[1.03] hover:bg-foreground hover:text-background focus-visible:bg-foreground focus-visible:text-background focus-visible:opacity-100 sm:opacity-[0.55] sm:group-hover:opacity-100",
           installed &&
             "bg-emerald-500/10 text-emerald-700 disabled:opacity-100 dark:text-emerald-300",
         )}

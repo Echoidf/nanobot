@@ -13,7 +13,7 @@ import type { ModelPresetOption } from "@/components/thread/ModelPresetBadge";
 import { ThreadHeader } from "@/components/thread/ThreadHeader";
 import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
 import { ThreadViewport, type ThreadViewportHandle } from "@/components/thread/ThreadViewport";
-import { useNanobotStream, type SendAttachment, type SendOptions } from "@/hooks/useNanobotStream";
+import { useNanodeskStream, type SendAttachment, type SendOptions } from "@/hooks/useNanodeskStream";
 import { useSessionHistory } from "@/hooks/useSessions";
 import {
   ApiError,
@@ -33,7 +33,7 @@ import {
   installedMcpPresetsFromPayload,
   isMcpPresetsPayload,
 } from "@/lib/mcp-preset-events";
-import type { CanonicalRunSnapshot, StreamError } from "@/lib/nanobot-client";
+import type { CanonicalRunSnapshot, StreamError } from "@/lib/nanodesk-client";
 import { inferProviderFromModelName, providerDisplayLabel } from "@/lib/provider-brand";
 import type {
   ChatSummary,
@@ -41,6 +41,7 @@ import type {
   SlashCommand,
   SkillSummary,
   UIMessage,
+  AgentProfilePayload,
   WorkspaceScopePayload,
   WorkspacesPayload,
 } from "@/lib/types";
@@ -326,6 +327,7 @@ interface ThreadShellProps {
   composerActive?: boolean;
   composerInputAriaLabel?: string;
   emptyComposerVariant?: "hero" | "thread";
+  agent?: AgentProfilePayload | null;
   workspaceScope?: WorkspaceScopePayload | null;
   workspaceDefaultScope?: WorkspaceScopePayload | null;
   workspaceControls?: WorkspacesPayload["controls"] | null;
@@ -531,7 +533,7 @@ function HeroGreeting({ text }: { text: string }) {
       <h1
         ref={headingRef}
         data-testid="hero-greeting"
-        className="select-none whitespace-nowrap text-[34px] font-normal leading-[1.08] tracking-normal text-foreground sm:text-[48px] sm:leading-tight"
+        className="select-none [text-wrap:balance] text-[32px] font-semibold leading-[1.12] text-foreground sm:text-[46px] sm:leading-[1.08]"
       >
         {text}
       </h1>
@@ -657,6 +659,7 @@ export function ThreadShell({
   composerActive = true,
   composerInputAriaLabel,
   emptyComposerVariant = "hero",
+  agent = null,
   workspaceScope = null,
   workspaceDefaultScope = null,
   workspaceControls = null,
@@ -775,7 +778,7 @@ export function ThreadShell({
     setMessages,
     streamError,
     dismissStreamError,
-  } = useNanobotStream(chatId, initial, hasPendingToolCalls, handleTurnEnd);
+  } = useNanodeskStream(chatId, initial, hasPendingToolCalls, handleTurnEnd);
 
   useLayoutEffect(() => {
     if (currentUiMessagesRef.current === messages) return;
@@ -1278,7 +1281,7 @@ export function ThreadShell({
     }
   }, [chatId, displayMessages]);
 
-  // Persist thread to in-memory cache after paint so ``useNanobotStream``'s chat switch
+  // Persist thread to in-memory cache after paint so ``useNanodeskStream``'s chat switch
   // ``useEffect`` reset has flushed; ``skipLayoutCacheRef`` drops the first run that still
   // sees the *previous* chat's ``messages`` (avoids stale rows leaking across sessions).
   useEffect(() => {
@@ -1508,6 +1511,8 @@ export function ThreadShell({
           onTranscribeAudio={transcribeAudio}
           goalState={currentGoalState}
           workspaceScope={workspaceScope}
+          workspaceSessionKey={chatId ? `websocket:${chatId}` : null}
+          workspaceFileRefToken={token}
           workspaceControlsHidden={temporary}
           workspaceDefaultScope={workspaceDefaultScope}
           workspaceControls={workspaceControls}
@@ -1555,6 +1560,8 @@ export function ThreadShell({
           onTranscribeAudio={transcribeAudio}
           goalState={currentGoalState}
           workspaceScope={workspaceScope}
+          workspaceSessionKey={chatId ? `websocket:${chatId}` : null}
+          workspaceFileRefToken={token}
           workspaceControlsHidden={temporary}
           workspaceDefaultScope={workspaceDefaultScope}
           workspaceControls={workspaceControls}
@@ -1594,6 +1601,7 @@ export function ThreadShell({
     <ThreadHeader
       title={title}
       handle={temporary || hideHeaderTitle ? null : session?.handle}
+      agent={agent}
       onToggleSidebar={onToggleSidebar}
       theme={theme}
       onToggleTheme={onToggleTheme}

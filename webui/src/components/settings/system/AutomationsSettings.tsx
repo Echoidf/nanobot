@@ -215,7 +215,7 @@ export function AutomationsSettings({
               <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-foreground/85">
                 {tx("settings.automations.queue", "Queue")}
               </h2>
-              <span className="rounded-full bg-orange-100/60 px-2 py-0.5 text-[11px] text-orange-800/70 tabular-nums dark:bg-orange-300/10 dark:text-orange-200/75">
+              <span className="rounded-full bg-cyan-100/60 px-2 py-0.5 text-[11px] text-cyan-800/70 tabular-nums dark:bg-cyan-300/10 dark:text-cyan-200/75">
                 {filtered.length}
               </span>
             </div>
@@ -644,7 +644,7 @@ function AutomationStatusBadge({
       className={cn(
         "inline-flex h-6 items-center rounded-full px-2.5 text-[11.5px] font-medium",
         tone === "success" &&
-          "bg-orange-100/72 text-orange-800 dark:bg-orange-300/12 dark:text-orange-200",
+          "bg-cyan-100/72 text-cyan-800 dark:bg-cyan-300/12 dark:text-cyan-200",
         tone === "warning" &&
           "bg-amber-100/80 text-amber-800 dark:bg-amber-300/14 dark:text-amber-200",
         tone === "neutral" &&
@@ -1490,7 +1490,7 @@ function formatAutomationNextTitle(
 
 function automationStatusDotClass(job: SessionAutomationJob): string {
   const status = automationStatusKey(job);
-  if (status === "active" || status === "running") return "bg-orange-500";
+  if (status === "active" || status === "running") return "bg-cyan-500";
   if (status === "failed") return "bg-amber-500";
   return "bg-muted-foreground/45";
 }

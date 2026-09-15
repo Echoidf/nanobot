@@ -19,7 +19,7 @@
     --card-foreground: 240 3% 12%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 3% 12%;
-    --primary: 240 4% 16%;
+    --primary: 194 72% 38%;
     --primary-foreground: 0 0% 98%;
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
@@ -32,13 +32,13 @@
     --border: 40 8% 90.5%;
     --input: 40 8% 90.5%;
     --ring: 0 0% 3.9%;
-    --inline-token-highlight: #ef8e30;
+    --inline-token-highlight: #1686a8;
     --session-handle-lightness: 0.5;
     --session-handle-chroma: 0.12;
-    --temporary-control-active: #ef8e30;
-    --temporary-accent: 24 95% 53%;
-    --temporary-foreground: 17 88% 32%;
-    --temporary-border: 17 88% 40%;
+    --temporary-control-active: #1686a8;
+    --temporary-accent: 194 72% 42%;
+    --temporary-foreground: 194 72% 30%;
+    --temporary-border: 194 72% 38%;
     --radius: 0.4375rem;
     /* Shared shape scale: marks, compact content, controls, and progressively larger surfaces. */
     --radius-mark: 0.25rem;
@@ -49,46 +49,50 @@
     --radius-modal: 1.375rem;
     --radius-prominent: 1.75rem;
     --radius-pill: 9999px;
-    --sidebar: 40 8% 96.8%;
-    --sidebar-foreground: 0 0% 3.9%;
-    --sidebar-selected: 40 1% 89.4%;
-    --sidebar-accent: 0 0% 95.8%;
-    --sidebar-accent-foreground: 0 0% 9%;
-    --sidebar-border: 40 8% 90.5%;
+    --sidebar: 220 12% 96.8%;
+    --sidebar-foreground: 220 12% 10%;
+    --sidebar-selected: 194 22% 90.5%;
+    --sidebar-accent: 220 12% 94.8%;
+    --sidebar-accent-foreground: 220 12% 10%;
+    --sidebar-border: 220 10% 89.5%;
     --settings-canvas: var(--background);
-    --settings-surface: 60 6% 96.7%;
+    --settings-surface: 220 12% 96.7%;
     --scrollbar-thumb: hsl(var(--muted-foreground) / 0.26);
     --scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.42);
   }
 
   .dark {
     color-scheme: dark;
-    --background: 0 0% 19%;
-    --foreground: 240 4% 96%;
-    --card: 0 0% 22%;
+    --background: 220 10% 12%;
+    --foreground: 220 8% 96%;
+    --card: 220 10% 16%;
     --card-foreground: 240 4% 96%;
     --popover: var(--card);
     --popover-foreground: 240 4% 96%;
-    --primary: 240 5% 98%;
-    --primary-foreground: 0 0% 9%;
+    --primary: 194 75% 58%;
+    --primary-foreground: 220 12% 10%;
     --secondary: var(--card);
     --secondary-foreground: 0 0% 98%;
     --muted: var(--card);
     --muted-foreground: 0 0% 65%;
     --accent: 0 0% 25%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 28%;
+    /* Red-400 in dark mode: the shadcn default (0 62.8% 30.6%) is a maroon that
+       drops to ~1.5:1 against the dark card, so error copy reads as muddy and
+       unreadable. Foreground flips to dark ink to keep filled danger buttons
+       legible against the brighter fill. */
+    --destructive: 0 90.6% 70.6%;
+    --destructive-foreground: 0 75% 12%;
+    --border: 220 8% 25%;
     --input: var(--border);
     --ring: 0 0% 83.1%;
-    --inline-token-highlight: #ef8e30;
+    --inline-token-highlight: #58c1df;
     --session-handle-lightness: 0.75;
     --session-handle-chroma: 0.11;
-    --temporary-control-active: #ef8e30;
-    --temporary-accent: 24 95% 53%;
-    --temporary-foreground: 32 98% 73%;
-    --temporary-border: 27 96% 61%;
+    --temporary-control-active: #58c1df;
+    --temporary-accent: 194 75% 62%;
+    --temporary-foreground: 194 75% 78%;
+    --temporary-border: 194 75% 68%;
     --sidebar: var(--card);
     --sidebar-foreground: 0 0% 98%;
     --sidebar-selected: 0 0% 29.8%;
@@ -163,7 +167,7 @@
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background-color: rgb(236 141 49);
+    background-color: rgb(22 134 168);
     opacity: 0;
     transition: opacity 220ms ease-out;
   }

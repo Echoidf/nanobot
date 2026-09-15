@@ -20,6 +20,8 @@ export function useModelSettingsState(initialSettings: SettingsPayload | null) {
   const [modelMigrationSaving, setModelMigrationSaving] = useState(false);
   const [modelPresetPendingDelete, setModelPresetPendingDelete] =
     useState<SettingsPayload["model_presets"][number] | null>(null);
+  const [providerPendingDelete, setProviderPendingDelete] =
+    useState<SettingsPayload["providers"][number] | null>(null);
   const modelPresetBeforeCreateRef = useRef<string | null>(null);
   const [providerSaving, setProviderSaving] = useState<string | null>(null);
   const [providerOAuthFlow, setProviderOAuthFlow] =
@@ -59,6 +61,7 @@ export function useModelSettingsState(initialSettings: SettingsPayload | null) {
     providerOAuthFlow,
     providerOAuthFlowRef,
     providerOAuthResponse,
+    providerPendingDelete,
     providerSaving,
     saving,
     setEditingProviderKeys,
@@ -77,6 +80,7 @@ export function useModelSettingsState(initialSettings: SettingsPayload | null) {
     setProviderOAuthDialogError,
     setProviderOAuthFlow,
     setProviderOAuthResponse,
+    setProviderPendingDelete,
     setProviderSaving,
     setSaving,
     setVisibleProviderKeys,

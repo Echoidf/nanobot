@@ -32,6 +32,7 @@ def test_session_context_separates_archive_progress_from_replay() -> None:
     assert payload == {
         "schema_version": 1,
         "session_key": "websocket:context",
+        "agent_id": "default",
         "total_messages": 4,
         "archived_messages": 2,
         "replay_messages": len(replay),
@@ -74,3 +75,14 @@ def test_session_context_sanitizes_usage_metadata() -> None:
     payload = session_context_payload(session)
 
     assert payload["last_usage"] == {"prompt_tokens": 120, "completion_tokens": 8}
+
+
+def test_session_context_includes_agent_id() -> None:
+    session = Session(
+        key="websocket:context",
+        metadata={"agent_id": "writer"},
+    )
+
+    payload = session_context_payload(session)
+
+    assert payload["agent_id"] == "writer"

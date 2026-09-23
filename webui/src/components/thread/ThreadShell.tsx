@@ -915,14 +915,18 @@ export function ThreadShell({
   const sessionModelPreset = session?.modelPreset?.trim() || null;
   const sessionModelSelection = session?.modelSelectionMode
     ?? (sessionModelPreset ? "manual" : "auto");
+  const sessionReasoningEffort = session?.reasoningEffort?.trim() || null;
   const [localModelSelection, setLocalModelSelection] = useState<string | null>(null);
+  const [localReasoningEffort, setLocalReasoningEffort] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     setLocalModelSelection(null);
-  }, [session?.key, sessionModelPreset, sessionModelSelection]);
+    setLocalReasoningEffort(undefined);
+  }, [session?.key, sessionModelPreset, sessionModelSelection, sessionReasoningEffort]);
   const activeModelSelection = localModelSelection
     || (sessionModelSelection === "manual" ? sessionModelPreset || "default" : "auto");
   const activeModelPreset = activeModelSelection === "auto" ? null : activeModelSelection;
   const handleModelPresetChange = useCallback(async (name: string) => {
+    setLocalReasoningEffort(undefined);
     if (!chatId) {
       setLocalModelSelection(name);
       return;
@@ -930,6 +934,29 @@ export function ThreadShell({
     await client.sendSystemCommand(chatId, `/model ${name}`);
     setLocalModelSelection(name);
   }, [chatId, client]);
+  const activeReasoningEffort = localReasoningEffort !== undefined
+    ? localReasoningEffort
+    : sessionReasoningEffort;
+  const handleReasoningEffortChange = useCallback(async (effort: string | null) => {
+    const normalized = effort?.trim() || null;
+    if (!chatId) {
+      setLocalReasoningEffort(normalized);
+      return;
+    }
+    await client.sendSystemCommand(
+      chatId,
+      normalized ? `/model --effort ${normalized}` : "/model --effort default",
+    );
+    setLocalReasoningEffort(normalized);
+  }, [chatId, client]);
+  const activePresetSettings = useMemo(() => {
+    if (!settings || !activeModelPreset) return null;
+    return settings.model_presets.find((preset) => preset.name === activeModelPreset) ?? null;
+  }, [settings, activeModelPreset]);
+  const reasoningEffortOptions = useMemo(
+    () => activePresetSettings?.reasoning_effort_values ?? [],
+    [activePresetSettings],
+  );
   const modelPresetOptions = useMemo(
     () => modelPresetOptionsFromSettings(settings),
     [settings],
@@ -1348,11 +1375,14 @@ export function ThreadShell({
       }
       if (localModelSelection && localModelSelection !== "auto") {
         await client.sendSystemCommand(newId, `/model ${localModelSelection}`).catch(() => {});
+        if (localReasoningEffort) {
+          await client.sendSystemCommand(newId, `/model --effort ${localReasoningEffort}`).catch(() => {});
+        }
       }
       setPendingFirstTargetChatId(newId);
       return true;
     },
-    [booting, client, localModelSelection, onCreateChat, withWorkspaceScope, workspaceScope],
+    [booting, client, localModelSelection, localReasoningEffort, onCreateChat, withWorkspaceScope, workspaceScope],
   );
 
   const handleThreadSend = useCallback(
@@ -1370,6 +1400,16 @@ export function ThreadShell({
       }
     },
     [chatId, send, withWorkspaceScope],
+  );
+
+  // A card click is an ordinary user turn: the option's ``value`` goes to the
+  // agent while the transcript shows the option's title.
+  const handleCardOptionSelect = useCallback(
+    (value: string) => {
+      if (!value.trim()) return;
+      handleThreadSend(value);
+    },
+    [handleThreadSend],
   );
 
   const handleOpenFilePreview = useCallback((path: string) => {
@@ -1496,6 +1536,10 @@ export function ThreadShell({
           modelPreset={activeModelSelection}
           modelPresets={modelPresetOptions}
           onModelPresetChange={handleModelPresetChange}
+          activeReasoningEffort={activeReasoningEffort}
+          presetReasoningEffort={activePresetSettings?.reasoning_effort ?? null}
+          reasoningEffortOptions={reasoningEffortOptions}
+          onReasoningEffortChange={handleReasoningEffortChange}
           modelProvider={modelBadge.provider}
           modelProviderLabel={modelBadge.providerLabel}
           modelNeedsSetup={modelBadge.needsSetup}
@@ -1545,6 +1589,10 @@ export function ThreadShell({
           modelPreset={activeModelSelection}
           modelPresets={modelPresetOptions}
           onModelPresetChange={handleModelPresetChange}
+          activeReasoningEffort={activeReasoningEffort}
+          presetReasoningEffort={activePresetSettings?.reasoning_effort ?? null}
+          reasoningEffortOptions={reasoningEffortOptions}
+          onReasoningEffortChange={handleReasoningEffortChange}
           modelProvider={modelBadge.provider}
           modelProviderLabel={modelBadge.providerLabel}
           modelNeedsSetup={modelBadge.needsSetup}
@@ -1667,6 +1715,7 @@ export function ThreadShell({
             onOpenFilePreview={historyKey ? handleOpenFilePreview : undefined}
             onForkFromMessage={onForkChat ? handleForkFromMessage : undefined}
             onQuoteSelection={session ? handleQuoteSelection : undefined}
+            onCardOptionSelect={handleCardOptionSelect}
           />
         </FilePreviewAvailabilityProvider>
       </div>

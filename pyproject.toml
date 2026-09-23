@@ -1,5 +1,5 @@
 [project]
-name = "nanobot-ai"
+name = "nanodesk-ai"
 version = "0.3.0"
 description = "A lightweight personal AI assistant framework"
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Xubin Ren"},
-    {name = "the nanobot contributors"}
+    {name = "the nanodesk contributors"}
 ]
 keywords = ["ai", "agent", "chatbot"]
 classifiers = [
@@ -107,11 +107,11 @@ dev = [
 ]
 
 [project.scripts]
-nanobot = "nanobot.cli.entry:main"
+nanodesk = "nanodesk.cli.entry:main"
 
 # Third-party tool plugins register here.  Built-in tools are discovered
 # automatically via pkgutil scanning in ToolLoader.discover().
-# [project.entry-points."nanobot.tools"]
+# [project.entry-points."nanodesk.tools"]
 # my_plugin = "my_package.plugins:MyTool"
 
 [build-system]
@@ -126,38 +126,38 @@ allow-direct-references = true
 
 [tool.hatch.build]
 include = [
-    "nanobot/**/*.py",
-    "nanobot/templates/**/*.md",
-    "nanobot/skills/**/*.md",
-    "nanobot/skills/**/*.sh",
-    "nanobot/channels/*/webui/**/*",
-    "nanobot/web/dist/**/*",
+    "nanodesk/**/*.py",
+    "nanodesk/templates/**/*.md",
+    "nanodesk/skills/**/*.md",
+    "nanodesk/skills/**/*.sh",
+    "nanodesk/channels/*/webui/**/*",
+    "nanodesk/web/dist/**/*",
 ]
-# nanobot/web/dist/ is produced by `cd webui && bun run build` and is
+# nanodesk/web/dist/ is produced by `cd webui && bun run build` and is
 # git-ignored. List it as an artifact so hatch ships it in both wheel and
 # sdist even though VCS does not track it.
 artifacts = [
-    "nanobot/web/dist/**/*",
+    "nanodesk/web/dist/**/*",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["nanobot"]
-exclude = ["nanobot/channels/*/tests/**"]
+packages = ["nanodesk"]
+exclude = ["nanodesk/channels/*/tests/**"]
 
 [tool.hatch.build.targets.wheel.sources]
-"nanobot" = "nanobot"
+"nanodesk" = "nanodesk"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "nanobot/",
-    "nanobot/web/dist/",
+    "nanodesk/",
+    "nanodesk/web/dist/",
     "hatch_build.py",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "pyproject.toml",
 ]
-exclude = ["nanobot/channels/*/tests/**"]
+exclude = ["nanodesk/channels/*/tests/**"]
 
 [tool.ruff]
 line-length = 100
@@ -168,17 +168,17 @@ select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 
 [tool.basedpyright]
-include = ["nanobot"]
+include = ["nanodesk"]
 exclude = ["**/tests"]
 typeCheckingMode = "strict"
 pythonVersion = "3.11"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "nanobot/channels"]
+testpaths = ["tests", "nanodesk/channels"]
 
 [tool.coverage.run]
-source = ["nanobot"]
+source = ["nanodesk"]
 omit = ["tests/*", "**/tests/*"]
 
 [tool.coverage.report]

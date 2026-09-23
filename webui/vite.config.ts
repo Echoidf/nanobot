@@ -128,7 +128,7 @@ export default defineConfig(({ mode }) => {
       exclude: ["@radix-ui/react-dialog"],
     },
     build: {
-      outDir: path.resolve(__dirname, "../nanobot/web/dist"),
+      outDir: path.resolve(__dirname, "../nanodesk/web/dist"),
       emptyOutDir: true,
       manifest: "asset-manifest.json",
       sourcemap: false,

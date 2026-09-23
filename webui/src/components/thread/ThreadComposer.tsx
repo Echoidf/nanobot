@@ -200,6 +200,10 @@ interface ThreadComposerProps {
   modelPreset?: string | null;
   modelPresets?: ModelPresetOption[];
   onModelPresetChange?: (name: string) => void;
+  activeReasoningEffort?: string | null;
+  presetReasoningEffort?: string | null;
+  reasoningEffortOptions?: string[];
+  onReasoningEffortChange?: (effort: string | null) => void;
   modelProvider?: string | null;
   modelProviderLabel?: string | null;
   modelNeedsSetup?: boolean;
@@ -903,6 +907,10 @@ export function ThreadComposer({
   modelPreset = null,
   modelPresets = [],
   onModelPresetChange,
+  activeReasoningEffort,
+  presetReasoningEffort,
+  reasoningEffortOptions = [],
+  onReasoningEffortChange,
   modelProvider = null,
   modelProviderLabel = null,
   modelNeedsSetup = false,
@@ -1383,7 +1391,7 @@ export function ThreadComposer({
         );
       })
       // Preserve the gateway's relevance ranking: it puts folders first and
-      // demotes tool noise (.nanobot, .claude, __pycache__, ...) to the end.
+      // demotes tool noise (.nanodesk, .claude, __pycache__, ...) to the end.
       // Re-sorting here by name would push hidden folders back to the top.
       .slice(0, 8)
       .map((file) => ({
@@ -2549,6 +2557,10 @@ export function ThreadComposer({
                 fallbackModelName={fallbackModelName}
                 isHero={isHero}
                 onClick={modelNeedsSetup ? onModelBadgeClick : undefined}
+                activeReasoningEffort={activeReasoningEffort}
+                presetReasoningEffort={presetReasoningEffort}
+                reasoningEffortOptions={reasoningEffortOptions}
+                onReasoningEffortChange={onReasoningEffortChange}
               />
             ) : null}
             {showVoiceButton ? (

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from nanobot.cli.stream import StreamRenderer, ThinkingSpinner, terminal_icon
-from nanobot.config.schema import AgentDefaults, Config
+from nanodesk.cli.stream import StreamRenderer, ThinkingSpinner, terminal_icon
+from nanodesk.config.schema import AgentDefaults, Config
 
 
 def test_bot_name_and_icon_defaults_preserve_current_branding() -> None:

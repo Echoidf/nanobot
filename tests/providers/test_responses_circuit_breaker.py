@@ -4,14 +4,14 @@ import time
 
 import pytest
 
-from nanobot.providers.base import ProviderCallContext
-from nanobot.providers.openai_compat_provider import (
+from nanodesk.providers.base import ProviderCallContext
+from nanodesk.providers.openai_compat_provider import (
     _RESPONSES_FAILURE_THRESHOLD,
     _RESPONSES_PROBE_INTERVAL_S,
     OpenAICompatProvider,
 )
-from nanobot.providers.openai_responses.state import build_responses_state
-from nanobot.providers.registry import find_by_name
+from nanodesk.providers.openai_responses.state import build_responses_state
+from nanodesk.providers.registry import find_by_name
 
 
 @pytest.fixture()

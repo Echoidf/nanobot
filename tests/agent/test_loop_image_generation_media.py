@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.config.loader import set_config_path
-from nanobot.config.schema import ImageGenerationToolConfig, ProviderConfig, ToolsConfig
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.providers.image_generation import GeneratedImageResponse
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.bus.events import InboundMessage
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.loader import set_config_path
+from nanodesk.config.schema import ImageGenerationToolConfig, ProviderConfig, ToolsConfig
+from nanodesk.providers.base import LLMResponse, ToolCallRequest
+from nanodesk.providers.image_generation import GeneratedImageResponse
 
 PNG_DATA_URL = (
     "data:image/png;base64,"
@@ -36,7 +36,7 @@ async def test_generated_image_media_is_attached_to_final_assistant_message(
     """Generated images are attached even when the LLM only returns text."""
     set_config_path(tmp_path / "config.json")
     monkeypatch.setattr(
-        "nanobot.agent.tools.image_generation.get_image_gen_provider",
+        "nanodesk.agent.tools.image_generation.get_image_gen_provider",
         lambda name: FakeImageClient if name == "openrouter" else None,
     )
     provider = MagicMock()

@@ -4,22 +4,22 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.tools.context import RequestContext, request_context
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.outbound_events import GoalStatusEvent, TurnModelUpdatedEvent, UserInputEvent
-from nanobot.bus.runtime_events import (
+from nanodesk.agent.tools.context import RequestContext, request_context
+from nanodesk.bus.events import InboundMessage
+from nanodesk.bus.outbound_events import GoalStatusEvent, TurnModelUpdatedEvent, UserInputEvent
+from nanodesk.bus.runtime_events import (
     RuntimeEventBus,
     RuntimeEventContext,
     TurnRuntimeAdmitted,
     UserInputAccepted,
 )
-from nanobot.providers.base import GenerationSettings
-from nanobot.session import webui_turns as wth
-from nanobot.session.manager import SessionManager
-from nanobot.session.session_handles import session_handle_for_name
-from nanobot.session.session_messages import SESSION_MESSAGE_METADATA_KEY
-from nanobot.utils.llm_runtime import LLMRuntime
-from nanobot.webui.metadata import WEBSOCKET_TURN_OWNER_METADATA_KEY
+from nanodesk.providers.base import GenerationSettings
+from nanodesk.session import webui_turns as wth
+from nanodesk.session.manager import SessionManager
+from nanodesk.session.session_handles import session_handle_for_name
+from nanodesk.session.session_messages import SESSION_MESSAGE_METADATA_KEY
+from nanodesk.utils.llm_runtime import LLMRuntime
+from nanodesk.webui.metadata import WEBSOCKET_TURN_OWNER_METADATA_KEY
 
 
 @pytest.fixture(autouse=True)

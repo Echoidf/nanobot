@@ -1475,6 +1475,14 @@
       "railAria": "User prompt navigation"
     }
   },
+  "cards": {
+    "multiHint": "Pick one or more, then confirm",
+    "confirm": "Confirm ({{selected}})",
+    "other": "Other…",
+    "customPlaceholder": "Type your answer…",
+    "send": "Send",
+    "answered": "Answered"
+  },
   "message": {
     "streaming": "streaming",
     "delivery": {

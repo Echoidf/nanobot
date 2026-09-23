@@ -38,6 +38,13 @@ interface ModelPresetBadgeProps {
   fallbackModelName?: string | null;
   isHero: boolean;
   onClick?: () => void;
+  /** Session reasoning-effort override; null follows the preset default. */
+  activeReasoningEffort?: string | null;
+  /** Preset default effort, shown next to the Default choice. */
+  presetReasoningEffort?: string | null;
+  /** Values offered by the active preset (`reasoning_effort_values`, "" = default). */
+  reasoningEffortOptions?: string[];
+  onReasoningEffortChange?: (effort: string | null) => void | Promise<void>;
 }
 
 /** Render the active model as an explicit, accessible session-level preset selector. */
@@ -53,13 +60,29 @@ export function ModelPresetBadge({
   fallbackModelName,
   isHero,
   onClick,
+  activeReasoningEffort,
+  presetReasoningEffort,
+  reasoningEffortOptions = [],
+  onReasoningEffortChange,
 }: ModelPresetBadgeProps) {
   const { t } = useTranslation();
   const activeName = modelPreset?.trim() || "default";
   const canSwitch = !needsSetup && Boolean(onPresetChange) && modelPresets.length > 1;
   const [open, setOpen] = useState(false);
   const [pendingPreset, setPendingPreset] = useState<string | null>(null);
+  const [pendingEffort, setPendingEffort] = useState<string | null | undefined>(undefined);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const activeEffort = activeReasoningEffort?.trim() || null;
+  const effortValues = reasoningEffortOptions.filter((value) => value.trim() !== "");
+  const showEffort = activeName !== "auto"
+    && Boolean(onReasoningEffortChange)
+    && effortValues.length > 0;
+  const defaultEffortLabel = presetReasoningEffort?.trim()
+    ? t("thread.composer.effortDefaultWithPreset", {
+      defaultValue: "默认 · {{effort}}",
+      effort: presetReasoningEffort.trim(),
+    })
+    : t("thread.composer.effortDefault", { defaultValue: "默认" });
 
   async function selectPreset(name: string) {
     if (!onPresetChange || name === activeName || pendingPreset) return;
@@ -72,6 +95,21 @@ export function ModelPresetBadge({
       setSwitchError(reason instanceof Error && reason.message ? reason.message : " ");
     } finally {
       setPendingPreset(null);
+    }
+  }
+
+  async function selectEffort(value: string | null) {
+    if (!onReasoningEffortChange || pendingPreset || pendingEffort !== undefined) return;
+    if ((value?.trim() || null) === activeEffort) return;
+    setPendingEffort(value);
+    setSwitchError(null);
+    try {
+      await onReasoningEffortChange(value);
+      setOpen(false);
+    } catch (reason) {
+      setSwitchError(reason instanceof Error && reason.message ? reason.message : " ");
+    } finally {
+      setPendingEffort(undefined);
     }
   }
 
@@ -107,7 +145,7 @@ export function ModelPresetBadge({
 
   return (
     <DropdownMenu open={open} onOpenChange={(nextOpen) => {
-      if (pendingPreset) return;
+      if (pendingPreset || pendingEffort !== undefined) return;
       setOpen(nextOpen);
       if (nextOpen) setSwitchError(null);
     }}>
@@ -137,7 +175,7 @@ export function ModelPresetBadge({
             return (
               <DropdownMenuItem
                 key={preset.name}
-                disabled={!available || Boolean(pendingPreset)}
+                disabled={!available || Boolean(pendingPreset) || pendingEffort !== undefined}
                 onSelect={(event) => {
                   event.preventDefault();
                   void selectPreset(preset.name);
@@ -174,6 +212,57 @@ export function ModelPresetBadge({
             );
           })}
         </div>
+        {showEffort ? (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-2.5 pb-1 pt-1.5">
+              <span className="block text-[13px] font-semibold text-foreground">
+                {t("thread.composer.thinkingEffort", { defaultValue: "思考强度" })}
+              </span>
+              <span className="mt-0.5 block text-[11px] font-normal leading-4 text-muted-foreground">
+                {t("thread.composer.effortSessionOnly", {
+                  defaultValue: "仅本会话生效",
+                })}
+              </span>
+            </div>
+            <div
+              className="flex flex-wrap gap-1.5 px-2.5 pb-2"
+              role="group"
+              aria-label={t("thread.composer.thinkingEffort", { defaultValue: "思考强度" })}
+            >
+              {[{ value: null as string | null, label: defaultEffortLabel },
+                ...effortValues.map((value) => ({ value: value.trim() as string | null, label: value.trim() })),
+              ].map((choice) => {
+                const selected = (choice.value?.trim() || null) === activeEffort;
+                const pending = pendingEffort !== undefined
+                  && (pendingEffort?.trim() || null) === (choice.value?.trim() || null);
+                return (
+                  <button
+                    key={choice.value ?? "default"}
+                    type="button"
+                    disabled={Boolean(pendingPreset) || pendingEffort !== undefined}
+                    aria-pressed={selected}
+                    onClick={() => void selectEffort(choice.value)}
+                    className={cn(
+                      "inline-flex h-7 min-w-0 items-center gap-1 rounded-full border px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+                      selected
+                        ? "border-foreground/70 bg-foreground/[0.06] text-foreground dark:bg-white/[0.09]"
+                        : "border-border/60 bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      "disabled:cursor-not-allowed disabled:opacity-60",
+                    )}
+                  >
+                    {pending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                    ) : selected ? (
+                      <Check className="h-3 w-3" strokeWidth={2.4} aria-hidden />
+                    ) : null}
+                    <span className="truncate">{choice.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
         {switchError ? (
           <>
             <DropdownMenuSeparator />

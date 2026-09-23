@@ -2,21 +2,23 @@ import asyncio
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ModelPresetConfig
-from nanobot.nanobot import Nanobot
-from nanobot.providers.base import GenerationSettings, LLMProvider, LLMResponse
-from nanobot.providers.factory import ProviderSnapshot
-from nanobot.providers.fallback_provider import FallbackProvider
-from nanobot.sdk.types import SessionSnapshot
-from nanobot.session.model_selection import (
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import ModelPresetConfig
+from nanodesk.nanodesk import Nanodesk
+from nanodesk.providers.base import GenerationSettings, LLMProvider, LLMResponse
+from nanodesk.providers.factory import ProviderSnapshot
+from nanodesk.providers.fallback_provider import FallbackProvider
+from nanodesk.sdk.types import SessionSnapshot
+from nanodesk.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
     SESSION_MODEL_SELECTION_MODE_METADATA_KEY,
+    SESSION_REASONING_EFFORT_METADATA_KEY,
     model_preset_from_metadata,
     model_selection_mode_from_metadata,
+    reasoning_effort_from_metadata,
 )
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 class RecordingProvider(LLMProvider):
@@ -241,7 +243,7 @@ async def test_streamed_sdk_resolves_session_runtime_after_lock_admission(tmp_pa
     lock = loop._session_locks.setdefault(session_key, asyncio.Lock())
     await lock.acquire()
     try:
-        run = await Nanobot(loop).run_streamed("hello", session_key=session_key)
+        run = await Nanodesk(loop).run_streamed("hello", session_key=session_key)
         loop.set_session_model_preset(session_key, "deep")
     finally:
         lock.release()
@@ -272,7 +274,7 @@ async def test_sdk_custom_model_preset_metadata_does_not_select_runtime(
         context_window_tokens=8_000,
     )
     loop.schedule_background = lambda coro: coro.close()  # type: ignore[method-assign]
-    bot = Nanobot(loop)
+    bot = Nanodesk(loop)
 
     await bot.sessions.ingest(
         "sdk:custom-metadata",
@@ -313,7 +315,7 @@ async def test_sdk_invalid_internal_model_preset_metadata_fails_explicitly(
         context_window_tokens=8_000,
     )
     loop.schedule_background = lambda coro: coro.close()  # type: ignore[method-assign]
-    bot = Nanobot(loop)
+    bot = Nanodesk(loop)
 
     await bot.sessions.ingest(
         "sdk:invalid-internal-metadata",
@@ -325,3 +327,67 @@ async def test_sdk_invalid_internal_model_preset_metadata_fails_explicitly(
         await bot.run("hello", session_key="sdk:invalid-internal-metadata")
 
     assert base.calls == []
+
+
+@pytest.mark.asyncio
+async def test_session_reasoning_effort_override_applies_to_manual_runtime(
+    tmp_path,
+) -> None:
+    base = RecordingProvider("base-model")
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=base,
+        workspace=tmp_path,
+        model="base-model",
+        context_window_tokens=8_000,
+        model_presets={
+            "default": ModelPresetConfig(model="base-model"),
+            "fast": ModelPresetConfig(model="base-model"),
+        },
+    )
+    loop.schedule_background = lambda coro: coro.close()  # type: ignore[method-assign]
+    session_key = "sdk:effort"
+    loop.set_session_model_preset(session_key, "fast")
+
+    runtime = loop.set_session_reasoning_effort(session_key, "high")
+
+    assert runtime.generation.reasoning_effort == "high"
+    session = loop.sessions.get_or_create(session_key)
+    assert reasoning_effort_from_metadata(session.metadata) == "high"
+    assert loop.runtime_for_session(session).generation.reasoning_effort == "high"
+
+    cleared = loop.set_session_reasoning_effort(session_key, None)
+
+    assert cleared.generation.reasoning_effort is None
+    assert SESSION_REASONING_EFFORT_METADATA_KEY not in session.metadata
+
+
+@pytest.mark.asyncio
+async def test_session_reasoning_effort_cleared_on_preset_switch(
+    tmp_path,
+) -> None:
+    base = RecordingProvider("base-model")
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=base,
+        workspace=tmp_path,
+        model="base-model",
+        context_window_tokens=8_000,
+        model_presets={
+            "default": ModelPresetConfig(model="base-model"),
+            "fast": ModelPresetConfig(model="base-model"),
+        },
+    )
+    loop.schedule_background = lambda coro: coro.close()  # type: ignore[method-assign]
+    session_key = "sdk:effort-clear"
+    loop.set_session_model_preset(session_key, "fast")
+    loop.set_session_reasoning_effort(session_key, "high")
+
+    loop.set_session_model_preset(session_key, "fast")
+    session = loop.sessions.get_or_create(session_key)
+    assert reasoning_effort_from_metadata(session.metadata) is None
+
+    loop.set_session_reasoning_effort(session_key, "high")
+    loop.set_session_model_preset(session_key, "auto")
+    auto_session = loop.sessions.get_or_create(session_key)
+    assert reasoning_effort_from_metadata(auto_session.metadata) is None

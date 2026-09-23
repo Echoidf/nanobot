@@ -76,7 +76,7 @@ agents:
 
 ```text
 系统提示词
-  = nanobot 基础规则
+  = nanodesk 基础规则
   + Agent 简介和行为约束
   + Agent 已激活 Skills 内容
   + 当前运行可用的 Tool 定义
@@ -102,19 +102,19 @@ agents:
 
 现有 `tools` 注册方式分三类：
 
-1. 内置 Tool：放在 `nanobot/agent/tools/` 下，继承 `Tool` 基类；启动时 `ToolLoader` 用 `pkgutil.iter_modules(...)` 自动扫描并注册。
-2. 外部 Python 插件 Tool：在独立包的 `pyproject.toml` 里声明 `[project.entry-points."nanobot.tools"]`，启动时 `ToolLoader._discover_plugins()` 自动加载。
-3. MCP Tool：不直接写进 `nanobot/agent/tools/`，而是通过 MCP server 配置接入，连接后由 `MCPProvider` 动态注册到 `ToolRegistry`。
+1. 内置 Tool：放在 `nanodesk/agent/tools/` 下，继承 `Tool` 基类；启动时 `ToolLoader` 用 `pkgutil.iter_modules(...)` 自动扫描并注册。
+2. 外部 Python 插件 Tool：在独立包的 `pyproject.toml` 里声明 `[project.entry-points."nanodesk.tools"]`，启动时 `ToolLoader._discover_plugins()` 自动加载。
+3. MCP Tool：不直接写进 `nanodesk/agent/tools/`，而是通过 MCP server 配置接入，连接后由 `MCPProvider` 动态注册到 `ToolRegistry`。
 
 结论：后续可以自定义开发 `tools`。
 
-- 想做项目内工具：直接在 `nanobot/agent/tools/` 新增模块；
-- 想做可复用插件：单独发一个 Python 包，用 `nanobot.tools` entry point 接入；
+- 想做项目内工具：直接在 `nanodesk/agent/tools/` 新增模块；
+- 想做可复用插件：单独发一个 Python 包，用 `nanodesk.tools` entry point 接入；
 - 想接第三方能力服务：优先走 MCP。
 
 自定义 Tool 的最小要求：
 
-- 继承 `nanobot.agent.tools.base.Tool`；
+- 继承 `nanodesk.agent.tools.base.Tool`；
 - 实现 `name`、`description`、`parameters`、`execute()`；
 - 需要按配置开关时，补 `config_key`、`enabled()`、`create()`；
 - 需要限制使用场景时，设置 `_scopes`，例如 `{"core"}` 或 `{"subagent"}`。

@@ -6,20 +6,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.bus.queue import MessageBus
-from nanobot.bus.runtime_events import RuntimeModelChanged
-from nanobot.config.errors import ConfigLoadError
-from nanobot.config.loader import save_config
-from nanobot.config.schema import Config, ModelPresetConfig
-from nanobot.providers.base import GenerationSettings
-from nanobot.providers.factory import ProviderSnapshot, load_provider_snapshot
-from nanobot.session.model_selection import (
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.agent.tools.registry import ToolRegistry
+from nanodesk.bus.queue import MessageBus
+from nanodesk.bus.runtime_events import RuntimeModelChanged
+from nanodesk.config.errors import ConfigLoadError
+from nanodesk.config.loader import save_config
+from nanodesk.config.schema import Config, ModelPresetConfig
+from nanodesk.providers.base import GenerationSettings
+from nanodesk.providers.factory import ProviderSnapshot, load_provider_snapshot
+from nanodesk.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
     model_preset_from_metadata,
 )
-from nanobot.webui.settings_api import update_agent_settings
+from nanodesk.webui.settings_api import update_agent_settings
 
 
 def _provider(default_model: str, max_tokens: int = 123) -> MagicMock:
@@ -133,7 +133,7 @@ def test_provider_snapshot_missing_env_reports_explicit_config_path(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    name = "NANOBOT_TEST_REFRESH_MISSING_KEY"
+    name = "NANODESK_TEST_REFRESH_MISSING_KEY"
     monkeypatch.delenv(name, raising=False)
     config_path = tmp_path / "custom.json"
     config_path.write_text(
@@ -354,7 +354,7 @@ def test_settings_context_window_refreshes_runtime_state(
     config.agents.defaults.context_window_tokens = 65_536
     config.providers.openai.api_key = "sk-test"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("nanodesk.config.loader._current_config_path", config_path)
 
     def loader(*, preset_name: str | None = None) -> ProviderSnapshot:
         return load_provider_snapshot(config_path, preset_name=preset_name)

@@ -6,11 +6,11 @@ x-bwrap-security: &bwrap-security
     - seccomp=unconfined
 
 services:
-  nanobot-gateway:
+  nanodesk-gateway:
     <<: *bwrap-security
 
-  nanobot-api:
+  nanodesk-api:
     <<: *bwrap-security
 
-  nanobot-cli:
+  nanodesk-cli:
     <<: *bwrap-security

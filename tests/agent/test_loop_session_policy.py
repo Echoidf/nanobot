@@ -3,15 +3,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import (
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.bus.events import (
     INBOUND_META_RUNTIME_CONTROL,
     RUNTIME_CONTROL_SESSION_DISCARD,
     InboundMessage,
 )
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import GenerationSettings, LLMResponse
-from nanobot.session.keys import UNIFIED_SESSION_KEY
+from nanodesk.bus.queue import MessageBus
+from nanodesk.providers.base import GenerationSettings, LLMResponse
+from nanodesk.session.keys import UNIFIED_SESSION_KEY
 
 
 def _message(key: str, content: str) -> InboundMessage:

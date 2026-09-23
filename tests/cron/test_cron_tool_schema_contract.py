@@ -13,9 +13,9 @@ from collections.abc import Iterator
 
 import pytest
 
-from nanobot.agent.tools.context import RequestContext, request_context
-from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.tools.registry import ToolRegistry
+from nanodesk.agent.tools.context import RequestContext, request_context
+from nanodesk.agent.tools.cron import CronTool
+from nanodesk.agent.tools.registry import ToolRegistry
 
 
 class _SvcStub:

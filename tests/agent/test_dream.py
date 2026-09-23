@@ -2,15 +2,15 @@
 
 import pytest
 
-from nanobot.agent.memory import MemoryStore
-from nanobot.config.schema import ModelPresetConfig
-from nanobot.providers.base import LLMResponse
-from nanobot.security.workspace_access import (
+from nanodesk.agent.memory import MemoryStore
+from nanodesk.config.schema import ModelPresetConfig
+from nanodesk.providers.base import LLMResponse
+from nanodesk.security.workspace_access import (
     bind_workspace_scope,
     default_workspace_scope,
     reset_workspace_scope,
 )
-from nanobot.utils.prompt_templates import render_template
+from nanodesk.utils.prompt_templates import render_template
 
 
 @pytest.fixture
@@ -369,9 +369,9 @@ class TestEphemeralDirect:
         """Factory fixture that builds a minimal AgentLoop with mocked deps."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.agent.memory import MemoryStore
-        from nanobot.bus.queue import MessageBus
+        from nanodesk.agent.loop import AgentLoop
+        from nanodesk.agent.memory import MemoryStore
+        from nanodesk.bus.queue import MessageBus
 
         store = MemoryStore(tmp_path)
         store.write_soul("# Soul")
@@ -387,9 +387,9 @@ class TestEphemeralDirect:
         )
 
         with (
-            patch("nanobot.agent.loop.SessionManager"),
-            patch("nanobot.agent.loop.SubagentManager") as mock_sub,
-            patch("nanobot.agent.loop.Consolidator") as mock_consolidator_cls,
+            patch("nanodesk.agent.loop.SessionManager"),
+            patch("nanodesk.agent.loop.SubagentManager") as mock_sub,
+            patch("nanodesk.agent.loop.Consolidator") as mock_consolidator_cls,
         ):
             mock_sub.return_value.cancel_by_session = AsyncMock(return_value=0)
             mock_consolidator_cls.return_value.maybe_consolidate_by_tokens = AsyncMock()
@@ -511,8 +511,8 @@ class TestEphemeralDirect:
         """Dream must only see the batch selected by build_dream_prompt."""
         from unittest.mock import MagicMock
 
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.queue import MessageBus
+        from nanodesk.agent.loop import AgentLoop
+        from nanodesk.bus.queue import MessageBus
 
         store = MemoryStore(tmp_path)
         for i in range(60):
@@ -566,10 +566,10 @@ class TestEphemeralHooks:
         """Build an AgentLoop with a spy hook to verify hook firing behavior."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from nanobot.agent.hook import AgentHook
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from nanodesk.agent.hook import AgentHook
+        from nanodesk.agent.loop import AgentLoop
+        from nanodesk.bus.queue import MessageBus
+        from nanodesk.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -588,9 +588,9 @@ class TestEphemeralHooks:
         spy.after_iteration = AsyncMock()
 
         with (
-            patch("nanobot.agent.loop.SessionManager"),
-            patch("nanobot.agent.loop.SubagentManager") as mock_sub,
-            patch("nanobot.agent.loop.Consolidator") as mock_consolidator_cls,
+            patch("nanodesk.agent.loop.SessionManager"),
+            patch("nanodesk.agent.loop.SubagentManager") as mock_sub,
+            patch("nanodesk.agent.loop.Consolidator") as mock_consolidator_cls,
         ):
             mock_sub.return_value.cancel_by_session = AsyncMock(return_value=0)
             mock_consolidator_cls.return_value.maybe_consolidate_by_tokens = AsyncMock()

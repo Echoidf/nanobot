@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useClient } from "@/providers/ClientProvider";
+import { parseCardOptionsBlob } from "@/lib/card-options";
 import { toMediaAttachment } from "@/lib/media";
 import {
   mergeToolProgressEvents,
@@ -954,6 +955,24 @@ export function useNanodeskStream(
             ),
             Date.now(),
           ));
+          return;
+        }
+        // Structured card-option groups ride an ``agent_ui`` blob on a plain
+        // answer frame. Render them as their own assistant row so the grid
+        // never mixes into streamed prose, and so replay re-creates the row
+        // from the persisted blob.
+        const cardOptions = parseCardOptionsBlob(ev.agent_ui);
+        if (cardOptions) {
+          clearActivitySegment();
+          setMessages((prev) => {
+            buffer.current = null;
+            activeAssistantRef.current = null;
+            return absorbCompleteAssistantMessage(prev, {
+              content: cardOptions.question,
+              cardOptions,
+              ...turnFieldsFromEvent(ev, "answer"),
+            });
+          });
           return;
         }
         // Intermediate agent breadcrumbs (tool-call hints, raw progress).

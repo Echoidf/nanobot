@@ -15,6 +15,8 @@ interface MarkdownTextProps {
   streaming?: boolean;
   preserveStreamingLayout?: boolean;
   onOpenFilePreview?: (path: string) => void;
+  /** Forwarded to card groups parsed out of ```cards fences. */
+  onCardOptionSelect?: (value: string) => void;
 }
 
 const loadMarkdownRenderer = () => import("@/components/MarkdownTextRenderer");
@@ -26,12 +28,14 @@ const MemoizedMarkdownRenderer = memo(function MemoizedMarkdownRenderer({
   highlightCode,
   streaming,
   onOpenFilePreview,
+  onCardOptionSelect,
 }: {
   source: string;
   className?: string;
   highlightCode: boolean;
   streaming: boolean;
   onOpenFilePreview?: (path: string) => void;
+  onCardOptionSelect?: (value: string) => void;
 }) {
   return (
     <LazyMarkdownRenderer
@@ -39,6 +43,7 @@ const MemoizedMarkdownRenderer = memo(function MemoizedMarkdownRenderer({
       highlightCode={highlightCode}
       streaming={streaming}
       onOpenFilePreview={onOpenFilePreview}
+      onCardOptionSelect={onCardOptionSelect}
     >
       {source}
     </LazyMarkdownRenderer>
@@ -77,6 +82,7 @@ export function MarkdownText({
   streaming = false,
   preserveStreamingLayout = false,
   onOpenFilePreview,
+  onCardOptionSelect,
 }: MarkdownTextProps) {
   const renderedSource = children;
   const renderPhase = streaming ? "streaming" : "complete";
@@ -108,6 +114,7 @@ export function MarkdownText({
           highlightCode={highlightCode}
           streaming={renderWithStreamingLayout}
           onOpenFilePreview={onOpenFilePreview}
+          onCardOptionSelect={onCardOptionSelect}
         />
       </Suspense>
     </MarkdownRendererBoundary>

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { CodeBlock } from "@/components/CodeBlock";
 import { splitFilePath } from "@/components/FileReferenceChip";
+import { MarkdownText } from "@/components/MarkdownText";
 import { ApiError, fetchFilePreview } from "@/lib/api";
 import type { FilePreviewPayload } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,13 @@ type PreviewState =
   | { status: "error"; error: unknown }
   | { status: "ready"; payload: FilePreviewPayload };
 
+type MarkdownViewMode = "preview" | "source";
+
+function isMarkdownPreview(language: string, path: string): boolean {
+  if (language.trim().toLowerCase() === "markdown") return true;
+  return /\.(md|markdown|mdx)$/i.test(path.split(/[?#]/, 1)[0]?.trim() ?? "");
+}
+
 export function FilePreviewPanel({
   sessionKey,
   path,
@@ -36,6 +44,7 @@ export function FilePreviewPanel({
   const { t } = useTranslation();
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const [entered, setEntered] = useState(false);
+  const [markdownView, setMarkdownView] = useState<MarkdownViewMode>("preview");
   const tokenRef = useRef(token);
   tokenRef.current = token;
 
@@ -47,6 +56,7 @@ export function FilePreviewPanel({
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
+    setMarkdownView("preview");
     fetchFilePreview(tokenRef.current, sessionKey, path)
       .then((payload) => {
         if (!cancelled) setState({ status: "ready", payload });
@@ -196,6 +206,39 @@ export function FilePreviewPanel({
                 );
               })}
             </nav>
+            {state.status === "ready" && isMarkdownPreview(state.payload.language, state.payload.path)
+              ? (
+                <div
+                  role="group"
+                  aria-label={t("filePreview.viewMode", { defaultValue: "Preview mode" })}
+                  className="flex shrink-0 items-center rounded-full border border-border/60 bg-muted/40 p-0.5 text-xs"
+                >
+                  {(
+                    [
+                      { value: "preview", label: t("filePreview.rendered", { defaultValue: "Preview" }) },
+                      { value: "source", label: t("filePreview.source", { defaultValue: "Source" }) },
+                    ] as Array<{ value: MarkdownViewMode; label: string }>
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setMarkdownView(option.value)}
+                      aria-pressed={markdownView === option.value}
+                      data-testid={`file-preview-view-${option.value}`}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 font-medium transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        markdownView === option.value
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )
+              : null}
             <button
               type="button"
               onClick={onClose}
@@ -237,15 +280,32 @@ export function FilePreviewPanel({
                     })}
                   </div>
                 ) : null}
+                {isMarkdownPreview(state.payload.language, state.payload.path)
+                    && markdownView === "preview"
+                  ? (
+                    <div
+                      className="min-h-full px-4 py-3 [overflow-wrap:anywhere] select-text"
+                      data-testid="file-preview-markdown"
+                    >
+                      <MarkdownText>{state.payload.content}</MarkdownText>
+                    </div>
+                  )
+                  : (
                 <CodeBlock
                   language={state.payload.language}
                   code={state.payload.content}
                   chrome="none"
                   highlight
                   showLineNumbers
+                  // Source must never wrap: markdown table rows are single
+                  // long lines and wrapping splits cells across visual lines.
+                  // Long lines scroll horizontally instead; plain-text copy
+                  // across line numbers is preserved by CodeBlock's block
+                  // line layout.
                   wrapLongLines={false}
                   className="min-h-full"
                 />
+                  )}
               </div>
             )}
           </div>

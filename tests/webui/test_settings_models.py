@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from nanobot.config.schema import Config
-from nanobot.webui.settings_models import (
+from nanodesk.config.schema import Config
+from nanodesk.webui.settings_models import (
     WebUISettingsError,
     create_provider_settings,
     delete_provider_settings,
@@ -114,7 +114,7 @@ def test_delete_unknown_provider_raises() -> None:
 
 def test_delete_provider_referenced_by_preset_is_blocked() -> None:
     config = Config()
-    from nanobot.config.schema import ModelPresetConfig
+    from nanodesk.config.schema import ModelPresetConfig
 
     config.model_presets["gpt"] = ModelPresetConfig(
         model="gpt-5.4",

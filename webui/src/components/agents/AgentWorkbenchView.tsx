@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { AgentProfileUpdate } from "@/lib/api";
-import type { AgentProfilePayload, AgentSkillPayload } from "@/lib/types";
+import type { AgentProfilePayload, AgentSkillPayload, SharedInstancePayload } from "@/lib/types";
 import { AgentIcon } from "@/lib/agent-icon";
 import { agentDescription, DEFAULT_AGENT_ID } from "@/lib/agent-copy";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -30,6 +30,8 @@ interface AgentWorkbenchViewProps {
   onSave: (action: "create" | "update" | "delete", profile: AgentProfileUpdate) => Promise<void>;
   modelPresets: Array<{ name: string }>;
   skillCatalog: AgentSkillPayload[];
+  sharedInstances?: SharedInstancePayload[];
+  sharedWarnings?: string[];
 }
 
 type AgentDialogMode = "create" | "edit";
@@ -154,6 +156,8 @@ export function AgentWorkbenchView({
   onSave,
   modelPresets,
   skillCatalog,
+  sharedInstances = [],
+  sharedWarnings = [],
 }: AgentWorkbenchViewProps) {
   const { t } = useTranslation();
   const selected = agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? null;
@@ -378,6 +382,43 @@ export function AgentWorkbenchView({
             )}
           </main>
         </div>
+        {sharedInstances.length || sharedWarnings.length ? (
+          <div className="mx-auto mt-5 w-full max-w-7xl rounded-panel border border-border/55 bg-settings-surface p-5 sm:p-6">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t("agents.shared.title", { defaultValue: "Shared instances" })}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {t("agents.shared.hint", { defaultValue: "Inherit skills, MCP servers and agents from a team instance. Open the shared URL in a new tab for a fresh isolated session." })}
+            </p>
+            {sharedWarnings.length ? (
+              <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                {sharedWarnings.map((warning) => <div key={warning}>{warning}</div>)}
+              </div>
+            ) : null}
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {sharedInstances.map((instance) => (
+                <div key={instance.id} className="rounded-control border border-border/55 bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium text-foreground">{instance.name || instance.id}</span>
+                    {instance.hasBaseUrl ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 rounded-control"
+                        onClick={() => window.open(instance.baseUrl, "_blank", "noopener,noreferrer")}
+                      >
+                        {t("agents.shared.open", { defaultValue: "Open" })}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {instance.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{instance.description}</p> : null}
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">{instance.id}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={(next) => { if (!next) closeDialog(); }}>

@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunResult
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import GenerationSettings
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.agent.runner import AgentRunResult
+from nanodesk.agent.subagent import SubagentManager, SubagentStatus
+from nanodesk.bus.queue import MessageBus
+from nanodesk.providers.base import GenerationSettings
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 @pytest.mark.asyncio

@@ -11,15 +11,18 @@ vi.mock("@/components/CodeBlock", () => ({
     code,
     language,
     highlight,
+    wrapLongLines,
   }: {
     code: string;
     language?: string;
     highlight?: boolean;
+    wrapLongLines?: boolean;
   }) => (
     <pre
       data-testid="mock-code-block"
       data-language={language}
       data-highlight={String(highlight)}
+      data-wrap={String(wrapLongLines)}
     >
       {code}
     </pre>
@@ -46,8 +49,10 @@ describe("FilePreviewPanel", () => {
     vi.mocked(fetchFilePreview).mockResolvedValue({
       path: "/Users/hr/workspace/quicksort.py",
       display_path: "quicksort.py",
+      project_path: "/Users/hr/workspace",
       language: "python",
       content: "print('ok')",
+      size: 11,
       truncated: false,
     });
 
@@ -80,8 +85,10 @@ describe("FilePreviewPanel", () => {
     vi.mocked(fetchFilePreview).mockResolvedValue({
       path: "/workspace/notes.md",
       display_path: "notes.md",
+      project_path: "/workspace",
       language: "markdown",
       content: "# Notes",
+      size: 7,
       truncated: false,
     });
 
@@ -94,7 +101,7 @@ describe("FilePreviewPanel", () => {
       />,
     );
 
-    await screen.findByTestId("mock-code-block");
+    await screen.findByTestId("file-preview-markdown");
     expect(fetchFilePreview).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -102,5 +109,66 @@ describe("FilePreviewPanel", () => {
     });
 
     expect(fetchFilePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders markdown as rich preview by default with a source toggle", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchFilePreview).mockResolvedValue({
+      path: "/workspace/notes.md",
+      display_path: "notes.md",
+      project_path: "/workspace",
+      language: "markdown",
+      content: "# Notes\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      size: 42,
+      truncated: false,
+    });
+
+    render(
+      <FilePreviewPanel
+        sessionKey="websocket:chat-1"
+        path="notes.md"
+        token="tok"
+        onClose={() => {}}
+      />,
+    );
+
+    const preview = await screen.findByTestId("file-preview-markdown");
+    expect(preview).toHaveTextContent("Notes");
+    expect(screen.queryByTestId("mock-code-block")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("file-preview-view-source"));
+    const sourceBlock = await screen.findByTestId("mock-code-block");
+    expect(sourceBlock).toHaveTextContent("| a | b |");
+    // Source rows must stay intact on one line (horizontal scroll instead
+    // of wrapping table cells across visual lines).
+    expect(sourceBlock).toHaveAttribute("data-wrap", "false");
+
+    await user.click(screen.getByTestId("file-preview-view-preview"));
+    expect(await screen.findByTestId("file-preview-markdown")).toBeInTheDocument();
+  });
+
+  it("keeps code files on the highlighted source view without a markdown toggle", async () => {
+    vi.mocked(fetchFilePreview).mockResolvedValue({
+      path: "/workspace/quicksort.py",
+      display_path: "quicksort.py",
+      project_path: "/workspace",
+      language: "python",
+      content: "print('ok')",
+      size: 11,
+      truncated: false,
+    });
+
+    render(
+      <FilePreviewPanel
+        sessionKey="websocket:chat-1"
+        path="quicksort.py"
+        token="tok"
+        onClose={() => {}}
+      />,
+    );
+
+    await screen.findByTestId("mock-code-block");
+    expect(screen.queryByTestId("file-preview-markdown")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("file-preview-view-source")).not.toBeInTheDocument();
   });
 });

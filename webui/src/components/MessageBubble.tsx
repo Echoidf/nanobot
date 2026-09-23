@@ -20,6 +20,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { AttachmentTile } from "@/components/AttachmentTile";
+import { CardOptions } from "@/components/cards/CardOptions";
 import { SessionHandleLabel } from "@/components/SessionHandleLabel";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MarkdownText } from "@/components/MarkdownText";
@@ -65,6 +66,8 @@ interface MessageBubbleProps {
   slashCommands?: SlashCommand[];
   onOpenFilePreview?: (path: string) => void;
   onForkFromHere?: () => void;
+  /** Deliver a card-option choice as the next user turn. */
+  onCardOptionSelect?: (value: string) => void;
 }
 
 function ForkArrowIcon({ className }: { className?: string }) {
@@ -334,6 +337,7 @@ export function MessageBubble({
   slashCommands = [],
   onOpenFilePreview,
   onForkFromHere,
+  onCardOptionSelect,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const mentionCliApps = useMemo(
@@ -445,6 +449,10 @@ export function MessageBubble({
 
   const empty = message.content.trim().length === 0;
   const media = message.media ?? [];
+  /** Card group normalized by the thread projection (structured frame or
+   * hoisted ```cards fence). Renders below the text as a live control. */
+  const cardData = message.cardOptions;
+  const hasCards = !!cardData;
   const reasoning = message.role === "assistant" ? message.reasoning ?? "" : "";
   const reasoningStreaming = !!(message.role === "assistant" && message.reasoningStreaming);
   const hasReasoning = reasoning.length > 0 || reasoningStreaming;
@@ -479,23 +487,23 @@ export function MessageBubble({
       : "";
   const showCompletedAt =
     completedAtLabel.length > 0
-    && (!empty || hasReasoning || media.length > 0);
+    && (!empty || hasReasoning || media.length > 0 || hasCards);
   const showAssistantTimestamp =
     assistantTimestampLabel.length > 0
-    && (!empty || hasReasoning || media.length > 0);
+    && (!empty || hasReasoning || media.length > 0 || hasCards);
   const assistantTimestampTitle = showAssistantTimestamp ? fmtDateTime(assistantTimestamp) : "";
   const showAutomationTrigger = showAssistantTimestamp && automationSourceLabel.length > 0;
   const showAssistantFooterRow = showCopyButton || showForkButton || showAssistantTimestamp;
   const showAssistantFooterSlot =
     message.role === "assistant"
-    && (!empty || hasReasoning || media.length > 0);
+    && (!empty || hasReasoning || media.length > 0 || hasCards);
   return (
     <div className="w-full text-[15px]" style={{ lineHeight: "var(--cjk-line-height)" }}>
       {hasReasoning ? (
         <ReasoningBubble
           text={reasoning}
           streaming={reasoningStreaming}
-          hasBodyBelow={!empty}
+          hasBodyBelow={!empty || hasCards}
         />
       ) : null}
       {empty && message.isStreaming && !hasReasoning ? (
@@ -508,6 +516,7 @@ export function MessageBubble({
               streaming={!!message.isStreaming}
               preserveStreamingLayout
               onOpenFilePreview={onOpenFilePreview}
+              onCardOptionSelect={onCardOptionSelect}
             >
               {message.content}
             </MarkdownText>
@@ -515,6 +524,14 @@ export function MessageBubble({
           {media.length > 0 ? <MessageMedia media={media} align="left" /> : null}
         </>
       )}
+      {cardData ? (
+        <CardOptions
+          data={cardData}
+          answered={message.cardOptionsResolvedAt !== undefined}
+          selectedIds={message.cardOptionsSelectedIds}
+          onSelect={onCardOptionSelect}
+        />
+      ) : null}
       {showAssistantFooterSlot ? (
         <TooltipProvider delayDuration={220} skipDelayDuration={80}>
           <div

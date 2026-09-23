@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import nanobot.webui.transcript as transcript_module
-from nanobot.session.history_visibility import HIDDEN_HISTORY_META
-from nanobot.webui.transcript import (
+import nanodesk.webui.transcript as transcript_module
+from nanodesk.session.history_visibility import HIDDEN_HISTORY_META
+from nanodesk.webui.transcript import (
     WEBUI_TRANSCRIPT_SCHEMA_VERSION,
     append_fork_marker,
     append_transcript_object,
@@ -18,7 +18,7 @@ from nanobot.webui.transcript import (
 
 
 def test_append_and_read_roundtrip(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t1"
     append_transcript_object(key, {"event": "user", "chat_id": "t1", "text": "hello"})
     lines = read_transcript_lines(key)
@@ -27,8 +27,8 @@ def test_append_and_read_roundtrip(tmp_path, monkeypatch) -> None:
 
 
 def test_append_stamps_created_at_ms(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
-    monkeypatch.setattr("nanobot.webui.transcript.time.time", lambda: 1_700_000_000.0)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.webui.transcript.time.time", lambda: 1_700_000_000.0)
     key = "websocket:t-created-at"
 
     append_transcript_object(key, {"event": "user", "chat_id": "t-created-at", "text": "hello"})
@@ -38,9 +38,9 @@ def test_append_stamps_created_at_ms(tmp_path, monkeypatch) -> None:
 
 
 def _force_small_transcript_budget(monkeypatch, *, limit: int = 520, target: int = 260) -> None:
-    monkeypatch.setattr("nanobot.webui.transcript._MAX_TRANSCRIPT_FILE_BYTES", limit)
-    monkeypatch.setattr("nanobot.webui.transcript._ACTIVE_TRANSCRIPT_ROTATE_BYTES", limit)
-    monkeypatch.setattr("nanobot.webui.transcript._TARGET_ACTIVE_TRANSCRIPT_BYTES", target)
+    monkeypatch.setattr("nanodesk.webui.transcript._MAX_TRANSCRIPT_FILE_BYTES", limit)
+    monkeypatch.setattr("nanodesk.webui.transcript._ACTIVE_TRANSCRIPT_ROTATE_BYTES", limit)
+    monkeypatch.setattr("nanodesk.webui.transcript._TARGET_ACTIVE_TRANSCRIPT_BYTES", target)
 
 
 def _append_numbered_turn(key: str, chat_id: str, idx: int) -> None:
@@ -56,7 +56,7 @@ def _append_numbered_turn(key: str, chat_id: str, idx: int) -> None:
 
 
 def _write_segmented_turns(tmp_path, monkeypatch, key: str, chat_id: str, count: int) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     _force_small_transcript_budget(monkeypatch)
     for idx in range(1, count + 1):
         _append_numbered_turn(key, chat_id, idx)
@@ -125,7 +125,7 @@ def test_segmented_transcript_paginates_latest_and_older_without_overlap(
 
 
 def test_latest_page_reads_active_chunk_once(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:single-active-read"
     for idx in range(1, 7):
         _append_numbered_turn(key, "single-active-read", idx)
@@ -220,8 +220,8 @@ def test_rotation_does_not_reread_existing_segments(tmp_path, monkeypatch) -> No
 
 
 def test_delete_webui_transcript_removes_segments(tmp_path, monkeypatch) -> None:
-    from nanobot.webui.thread_disk import webui_thread_file_path
-    from nanobot.webui.transcript import delete_webui_transcript, webui_transcript_path
+    from nanodesk.webui.thread_disk import webui_thread_file_path
+    from nanodesk.webui.transcript import delete_webui_transcript, webui_transcript_path
 
     key = "websocket:delete-segments"
     _write_segmented_turns(tmp_path, monkeypatch, key, "delete-segments", 4)
@@ -249,7 +249,7 @@ def test_fork_transcript_reads_across_segments(tmp_path, monkeypatch) -> None:
 
 
 def test_fork_transcript_before_user_index_copies_only_prefix(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     for ev in (
         {"event": "user", "chat_id": "source", "text": "round1"},
@@ -272,7 +272,7 @@ def test_fork_transcript_before_user_index_copies_only_prefix(tmp_path, monkeypa
 
 
 def test_fork_transcript_rejects_out_of_range_user_index(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     append_transcript_object(source, {"event": "user", "chat_id": "source", "text": "round1"})
 
@@ -281,7 +281,7 @@ def test_fork_transcript_rejects_out_of_range_user_index(tmp_path, monkeypatch) 
 
 
 def test_build_response_reports_fork_boundary_from_marker(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:fork"
     for ev in (
         {"event": "user", "chat_id": "fork", "text": "round1"},
@@ -299,7 +299,7 @@ def test_build_response_reports_fork_boundary_from_marker(tmp_path, monkeypatch)
 
 
 def test_nested_fork_drops_inherited_fork_marker(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     for ev in (
         {"event": "user", "chat_id": "source", "text": "round1"},
@@ -336,7 +336,7 @@ def test_write_session_messages_as_transcript_builds_canonical_prefix(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
 
     write_session_messages_as_transcript(
         "websocket:fork",
@@ -371,7 +371,7 @@ def test_direct_transcript_replay_generates_stable_message_ids() -> None:
 
 
 def test_replay_delta_and_turn_end(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t2"
     for ev in (
         {"event": "user", "chat_id": "t2", "text": "q"},
@@ -422,7 +422,7 @@ def test_thread_response_does_not_mark_completed_message_tool_tail_pending(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:cron-tail"
     turn_id = "cron:job:run"
     for ev in (
@@ -486,7 +486,7 @@ def test_thread_response_does_not_mark_completed_message_tool_tail_pending(
 
 
 def test_thread_response_marks_unfinished_tool_tail_pending(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:active-tail"
     append_transcript_object(
         key,
@@ -509,7 +509,7 @@ def test_thread_response_reports_active_registry_without_transcript(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
 
     out = build_webui_thread_response(
         "websocket:active-without-transcript",
@@ -528,7 +528,7 @@ def test_thread_response_reports_explicit_completion_without_assistant_row(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:empty-answer"
     turn_id = "turn-empty-answer"
     append_transcript_object(
@@ -552,7 +552,7 @@ def test_incomplete_turn_with_ambiguous_session_match_stays_pending(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:ambiguous-incomplete"
     turn_id = "turn-ambiguous"
     append_transcript_object(
@@ -596,7 +596,7 @@ def test_later_completion_does_not_hide_older_incomplete_turn(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:older-incomplete"
     for event in (
         {"event": "user", "text": "first", "turn_id": "turn-first"},
@@ -622,7 +622,7 @@ def test_later_completion_does_not_hide_older_incomplete_turn(
 
 
 def test_active_registry_does_not_hide_a_newer_queued_turn(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:queued-tail"
     for event in (
         {"event": "user", "text": "first", "turn_id": "turn-old"},
@@ -643,7 +643,7 @@ def test_active_registry_does_not_hide_a_newer_queued_turn(tmp_path, monkeypatch
 
 
 def test_replay_preserves_turn_metadata(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-turn"
     for ev in (
         {
@@ -692,7 +692,7 @@ def test_replay_preserves_turn_metadata(tmp_path, monkeypatch) -> None:
 
 
 def test_replay_reused_turn_id_after_turn_end_starts_new_turn(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-reused-turn"
 
     def event(
@@ -741,7 +741,7 @@ def test_replay_reused_turn_id_after_turn_end_starts_new_turn(tmp_path, monkeypa
 
 
 def test_replay_preserves_local_trigger_source_metadata(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-local-trigger-source"
     append_transcript_object(
         key,
@@ -762,7 +762,7 @@ def test_replay_preserves_automation_source_metadata_on_streamed_reply(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-streamed-cron-source"
     source = {"kind": "cron", "label": "Repo check"}
 
@@ -795,7 +795,7 @@ def test_replay_preserves_automation_source_metadata_on_streamed_reply(
 
 
 def test_replay_preserves_legacy_trigger_source_metadata(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-trigger-source"
     append_transcript_object(
         key,
@@ -816,7 +816,7 @@ def test_build_response_restores_session_users_for_legacy_transcript(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:legacy-users"
     append_transcript_object(
         key,
@@ -849,7 +849,7 @@ def test_build_response_restores_session_users_for_legacy_transcript(
 
 
 def test_complete_transcript_does_not_load_session_messages(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:complete-fast-path"
     for event in (
         {"event": "user", "chat_id": "complete-fast-path", "text": "question"},
@@ -879,7 +879,7 @@ def test_legacy_recovery_loads_session_and_builds_backfill_turns_once(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:lazy-legacy-recovery"
     append_transcript_object(
         key,
@@ -929,7 +929,7 @@ def test_build_response_restores_session_users_without_duplicating_new_transcrip
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:mixed-users"
     append_transcript_object(
         key,
@@ -987,7 +987,7 @@ def test_replay_uses_stream_end_final_text() -> None:
 
 
 def test_build_response_backfills_legacy_sse_only_transcripts(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-legacy"
     for ev in (
         {"event": "delta", "chat_id": "t-legacy", "text": "first answer"},
@@ -1024,7 +1024,7 @@ def test_build_response_backfills_legacy_sse_only_transcripts(tmp_path, monkeypa
 
 
 def test_backfill_does_not_duplicate_existing_user_transcript(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-current"
     for ev in (
         {"event": "user", "chat_id": "t-current", "text": "already stored"},
@@ -1047,7 +1047,7 @@ def test_backfill_does_not_misalign_when_session_only_has_transcript_tail(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-tail"
     for ev in (
         {"event": "message", "chat_id": "t-tail", "text": "old answer"},
@@ -1079,7 +1079,7 @@ def test_backfill_does_not_misalign_when_session_only_has_transcript_tail(
 
 
 def test_backfill_skips_internal_subagent_results(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-subagent"
     for ev in (
         {"event": "message", "chat_id": "t-subagent", "text": "summary one"},
@@ -1196,7 +1196,7 @@ def test_replay_infers_file_media_from_attachment_name() -> None:
 
 
 def test_replay_file_edit_event_creates_file_activity(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file"
     for ev in (
         {"event": "user", "chat_id": "t-file", "text": "edit"},
@@ -1576,7 +1576,7 @@ def test_replay_tool_events_keeps_phase_update_when_trace_is_deduped() -> None:
 
 
 def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-progress"
     for ev in (
         {"event": "user", "chat_id": "t-file-progress", "text": "edit"},
@@ -1649,7 +1649,7 @@ def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, m
 
 
 def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-pending"
     for ev in (
         {"event": "user", "chat_id": "t-file-pending", "text": "write"},
@@ -1711,7 +1711,7 @@ def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeyp
 
 
 def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-order"
     for ev in (
         {"event": "user", "chat_id": "t-file-order", "text": "edit"},
@@ -1770,8 +1770,110 @@ def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypat
     assert file_edit_segments[0] != file_edit_segments[1]
 
 
+def test_replay_renders_structured_card_options_as_its_own_assistant_row() -> None:
+    """A card frame must not fall into the trace path or the prose path."""
+    card = {
+        "event": "message",
+        "chat_id": "t-cards",
+        "text": "Which runtime?",
+        "turn_id": "turn-cards",
+        "turn_phase": "answer",
+        "turn_seq": 4,
+        "created_at_ms": 1700000004000,
+        "agent_ui": {
+            "kind": "card_options",
+            "data": {
+                "type": "card_options",
+                "question": "Which runtime?",
+                "options": [
+                    {"title": "Python", "value": "python", "icon": "terminal"},
+                    {"title": "Node"},
+                ],
+                "multiSelect": True,
+            },
+        },
+    }
+    msgs = replay_transcript_to_ui_messages([
+        {"event": "user", "chat_id": "t-cards", "text": "start", "turn_seq": 1},
+        card,
+        {"event": "turn_end", "chat_id": "t-cards", "turn_id": "turn-cards", "latency_ms": 5},
+    ])
+
+    assert len(msgs) == 2
+    card_msg = msgs[1]
+    assert card_msg["role"] == "assistant"
+    assert card_msg.get("kind") is None
+    assert card_msg["content"] == "Which runtime?"
+    assert card_msg["turnId"] == "turn-cards"
+    assert card_msg["turnPhase"] == "answer"
+    assert card_msg["turnSeq"] == 4
+    assert card_msg["latencyMs"] == 5
+
+    payload = card_msg["cardOptions"]
+    assert payload["type"] == "card_options"
+    assert payload["question"] == "Which runtime?"
+    assert payload["multiSelect"] is True
+    # Missing id/value fall back exactly the way the WebUI parser falls back.
+    assert payload["options"] == [
+        {"id": "option-1", "title": "Python", "value": "python", "icon": "terminal"},
+        {"id": "option-2", "title": "Node", "value": "Node"},
+    ]
+
+
+def test_replay_normalizes_card_options_to_the_client_contract() -> None:
+    """Bounds, id dedupe, and field trimming mirror card-options.ts so a reload
+    renders the same cards the live session rendered."""
+    msgs = replay_transcript_to_ui_messages([
+        {
+            "event": "message",
+            "chat_id": "t-normalize",
+            "text": "Pick",
+            "agent_ui": {
+                "kind": "card_options",
+                "data": {
+                    "question": "  Pick   one ",
+                    "options": [
+                        {"id": "a", "title": "  First   choice "},
+                        {"id": "a", "title": "Second", "progress": 150},
+                        {"title": ""},
+                        {"title": "Third", "kind": "image", "imageUrl": "https://img/3.png"},
+                    ],
+                    "allowCustomInput": "yes",
+                },
+            },
+        },
+    ])
+
+    payload = msgs[0]["cardOptions"]
+    assert payload["question"] == "Pick   one"
+    # Dropped entries do not consume an index, matching the client's numbering.
+    assert [option["id"] for option in payload["options"]] == ["a", "a-2", "option-3"]
+    assert payload["options"][0]["value"] == "First choice"
+    assert payload["options"][1]["progress"] == 100
+    assert payload["options"][2]["imageUrl"] == "https://img/3.png"
+    # Only strict booleans become flags.
+    assert "allowCustomInput" not in payload
+
+
+def test_replay_treats_non_card_agent_ui_as_ordinary_trace_text() -> None:
+    msgs = replay_transcript_to_ui_messages([
+        {
+            "event": "message",
+            "chat_id": "t-panel",
+            "kind": "progress",
+            "text": "panel tick",
+            "agent_ui": {"kind": "panel", "data": {"version": 1, "event": "tick"}},
+        },
+    ])
+
+    assert len(msgs) == 1
+    assert msgs[0]["kind"] == "trace"
+    assert "cardOptions" not in msgs[0]
+    assert "panel tick" in msgs[0]["content"]
+
+
 def test_build_response_schema(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t3"
     append_transcript_object(key, {"event": "user", "chat_id": "t3", "text": "x"})
     out = build_webui_thread_response(key, augment_user_media=None)

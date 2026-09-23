@@ -5,17 +5,17 @@ from typing import Callable
 
 import pytest
 
-from nanobot.agent.tools.context import RequestContext, request_context
-from nanobot.agent.tools.session_messages import (
+from nanodesk.agent.tools.context import RequestContext, request_context
+from nanodesk.agent.tools.session_messages import (
     ListSessionsTool,
     SendSessionMessageTool,
     SessionMessageError,
 )
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ToolsConfig
-from nanobot.session.manager import SessionManager
-from nanobot.session.session_handles import SessionHandle, SessionHandleResolver
-from nanobot.session.session_messages import (
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import ToolsConfig
+from nanodesk.session.manager import SessionManager
+from nanodesk.session.session_handles import SessionHandle, SessionHandleResolver
+from nanodesk.session.session_messages import (
     SESSION_MESSAGE_METADATA_KEY,
     session_message_envelope,
 )

@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-import nanobot.agent.memory as memory_module
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import GenerationSettings, LLMResponse
+import nanodesk.agent.memory as memory_module
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import AgentDefaults
+from nanodesk.providers.base import GenerationSettings, LLMResponse
 
 
 def _make_loop(

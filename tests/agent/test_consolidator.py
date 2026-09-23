@@ -5,26 +5,26 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.memory import (
+from nanodesk.agent.memory import (
     _ARCHIVE_SUMMARY_MAX_CHARS,
     Consolidator,
     MemoryStore,
 )
-from nanobot.providers.base import (
+from nanodesk.providers.base import (
     GenerationSettings,
     LLMResponse,
     ProviderConversationState,
     ToolCallRequest,
 )
-from nanobot.runtime_context import (
+from nanodesk.runtime_context import (
     RUNTIME_CONTEXT_HISTORY_META,
     RuntimeContextBlock,
     append_runtime_context,
 )
-from nanobot.session.keys import UNIFIED_SESSION_KEY, remember_last_channel
-from nanobot.session.manager import Session
-from nanobot.utils.llm_runtime import LLMRuntime
-from nanobot.utils.prompt_templates import render_template
+from nanodesk.session.keys import UNIFIED_SESSION_KEY, remember_last_channel
+from nanodesk.session.manager import Session
+from nanodesk.utils.llm_runtime import LLMRuntime
+from nanodesk.utils.prompt_templates import render_template
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ async def _archive(consolidator, messages, runtime, *, session_key="test:session
 
 class TestConsolidatorSummarize:
     def test_format_messages_keeps_media_only_user_turn(self):
-        path = "/home/user/.nanobot/media/websocket/clip.mp4"
+        path = "/home/user/.nanodesk/media/websocket/clip.mp4"
 
         formatted = MemoryStore._format_messages([
             {
@@ -319,7 +319,7 @@ class TestConsolidatorArchiveErrorHandling:
         runtime = replace(runtime, context_window_tokens=128_000)
         consolidator.store.raw_archive = MagicMock()
         monkeypatch.setattr(
-            "nanobot.agent.memory.render_template",
+            "nanodesk.agent.memory.render_template",
             MagicMock(side_effect=RuntimeError("template failed")),
         )
         session = Session(key="test:template")
@@ -539,7 +539,7 @@ class TestCompactIdleSession:
     @pytest.fixture
     def real_consolidator(self, store, mock_provider):
         """Create a Consolidator with a real SessionManager (not a mock)."""
-        from nanobot.session.manager import SessionManager
+        from nanodesk.session.manager import SessionManager
 
         sessions = SessionManager(store.workspace)
         return Consolidator(
@@ -1184,8 +1184,8 @@ class TestConsolidatorSessionRefresh:
     @pytest.mark.asyncio
     async def test_reloads_before_empty_session_guard(self, tmp_path):
         """A stale empty reference must not skip a non-empty cached session."""
-        from nanobot.agent.memory import Consolidator, MemoryStore
-        from nanobot.session.manager import Session, SessionManager
+        from nanodesk.agent.memory import Consolidator, MemoryStore
+        from nanodesk.session.manager import Session, SessionManager
 
         store = MemoryStore(tmp_path)
         provider = MagicMock()
@@ -1232,8 +1232,8 @@ class TestConsolidatorSessionRefresh:
         """After compact_idle_session replaces the session, a concurrent
         maybe_consolidate_by_tokens with the old reference should use the
         fresh session from cache instead of overwriting."""
-        from nanobot.agent.memory import Consolidator, MemoryStore
-        from nanobot.session.manager import SessionManager
+        from nanodesk.agent.memory import Consolidator, MemoryStore
+        from nanodesk.session.manager import SessionManager
 
         store = MemoryStore(tmp_path)
         provider = MagicMock()

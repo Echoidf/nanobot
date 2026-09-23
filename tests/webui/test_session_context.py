@@ -1,6 +1,6 @@
-from nanobot.session import Session
-from nanobot.utils.helpers import estimate_message_tokens
-from nanobot.webui.session_context import session_context_payload
+from nanodesk.session import Session
+from nanodesk.utils.helpers import estimate_message_tokens
+from nanodesk.webui.session_context import session_context_payload
 
 
 def test_session_context_separates_archive_progress_from_replay() -> None:

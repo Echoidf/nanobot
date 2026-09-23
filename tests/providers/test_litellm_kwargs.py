@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.providers.base import ProviderCallContext
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import find_by_name
+from nanodesk.providers.base import ProviderCallContext
+from nanodesk.providers.openai_compat_provider import OpenAICompatProvider
+from nanodesk.providers.registry import find_by_name
 
 
 def _fake_chat_response(content: str = "ok") -> SimpleNamespace:
@@ -312,7 +312,7 @@ async def test_openai_compat_chat_stream_forwards_reasoning_deltas_deepseek_styl
     async def on_content(d: str) -> None:
         content.append(d)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
@@ -342,7 +342,7 @@ async def test_deepseek_v4_pro_uses_responses_api() -> None:
     mock_chat = AsyncMock(return_value=_fake_chat_response())
     mock_responses = AsyncMock(return_value=_fake_responses_response("from responses"))
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -389,7 +389,7 @@ async def test_openai_compat_stream_forwards_tool_call_argument_deltas(
     async def on_tool_delta(delta: dict) -> None:
         deltas.append(delta)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
@@ -431,7 +431,7 @@ async def test_openai_compat_stream_forwards_legacy_function_call_argument_delta
     async def on_tool_delta(delta: dict) -> None:
         deltas.append(delta)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
@@ -508,7 +508,7 @@ def test_gemini_spec_keeps_openai_compat_base() -> None:
 
 async def test_openrouter_sets_default_attribution_headers() -> None:
     spec = find_by_name("openrouter")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
         provider = OpenAICompatProvider(
             api_key="sk-or-test-key",
             api_base="https://openrouter.ai/api/v1",
@@ -519,21 +519,21 @@ async def test_openrouter_sets_default_attribution_headers() -> None:
 
     headers = mock_client_cls.call_args.kwargs["default_headers"]
     assert headers["HTTP-Referer"] == "https://github.com/HKUDS/nanobot"
-    assert headers["X-OpenRouter-Title"] == "nanobot"
+    assert headers["X-OpenRouter-Title"] == "nanodesk"
     assert headers["X-OpenRouter-Categories"] == "cli-agent,personal-agent"
     assert "x-session-affinity" in headers
 
 
 async def test_openrouter_user_headers_override_default_attribution() -> None:
     spec = find_by_name("openrouter")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
         provider = OpenAICompatProvider(
             api_key="sk-or-test-key",
             api_base="https://openrouter.ai/api/v1",
             default_model="anthropic/claude-sonnet-4-5",
             extra_headers={
-                "HTTP-Referer": "https://nanobot.ai",
-                "X-OpenRouter-Title": "Nanobot Pro",
+                "HTTP-Referer": "https://nanodesk.ai",
+                "X-OpenRouter-Title": "Nanodesk Pro",
                 "X-Custom-App": "enabled",
             },
             spec=spec,
@@ -541,8 +541,8 @@ async def test_openrouter_user_headers_override_default_attribution() -> None:
         await provider._ensure_client()
 
     headers = mock_client_cls.call_args.kwargs["default_headers"]
-    assert headers["HTTP-Referer"] == "https://nanobot.ai"
-    assert headers["X-OpenRouter-Title"] == "Nanobot Pro"
+    assert headers["HTTP-Referer"] == "https://nanodesk.ai"
+    assert headers["X-OpenRouter-Title"] == "Nanodesk Pro"
     assert headers["X-OpenRouter-Categories"] == "cli-agent,personal-agent"
     assert headers["X-Custom-App"] == "enabled"
 
@@ -553,7 +553,7 @@ async def test_openrouter_keeps_model_name_intact() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("openrouter")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -578,7 +578,7 @@ async def test_aihubmix_strips_model_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("aihubmix")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -603,7 +603,7 @@ async def test_standard_provider_passes_model_through() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("deepseek")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -627,7 +627,7 @@ async def test_openai_compat_preserves_extra_content_on_tool_calls() -> None:
     mock_create = AsyncMock(return_value=_fake_tool_call_response())
     spec = find_by_name("gemini")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -654,7 +654,7 @@ async def test_openai_compat_preserves_extra_content_on_tool_calls() -> None:
 
 
 def test_openai_compat_parse_preserves_malformed_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     result = provider._parse(_fake_tool_call_response_with_arguments('{path:"foo.txt"}'))
@@ -663,7 +663,7 @@ def test_openai_compat_parse_preserves_malformed_tool_arguments() -> None:
 
 
 def test_openai_compat_parse_preserves_array_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     result = provider._parse(_fake_tool_call_response_with_arguments('["foo.txt"]'))
@@ -674,7 +674,7 @@ def test_openai_compat_parse_preserves_array_tool_arguments() -> None:
 def test_openai_model_passthrough() -> None:
     """OpenAI models pass through unchanged."""
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
             api_key="sk-test-key",
             default_model="gpt-4o",
@@ -689,7 +689,7 @@ async def test_direct_openai_gpt5_uses_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("from responses"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -721,7 +721,7 @@ async def test_direct_openai_reasoning_prefers_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("reasoned"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -753,7 +753,7 @@ async def test_direct_openai_retries_without_unsupported_server_compaction() -> 
     ])
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -784,7 +784,7 @@ async def test_direct_openai_gpt4o_stays_on_chat_completions() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response())
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -809,7 +809,7 @@ async def test_openrouter_gpt5_stays_on_chat_completions() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response())
     spec = find_by_name("openrouter")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -835,7 +835,7 @@ async def test_direct_openai_streaming_gpt5_uses_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_stream("hi"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -862,7 +862,7 @@ async def test_direct_openai_responses_404_falls_back_to_chat_completions() -> N
     mock_responses = AsyncMock(side_effect=_FakeResponsesError(404, "Responses endpoint not supported"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -888,7 +888,7 @@ async def test_direct_openai_open_circuit_skips_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("from responses"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -919,7 +919,7 @@ async def test_direct_openai_stream_responses_unsupported_param_falls_back() -> 
     )
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -945,7 +945,7 @@ async def test_direct_openai_responses_rate_limit_does_not_fallback() -> None:
     mock_responses = AsyncMock(side_effect=_FakeResponsesError(429, "rate limit"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -974,7 +974,7 @@ def test_openai_compat_supports_temperature_matches_reasoning_model_rules() -> N
 
 def test_openai_compat_build_kwargs_uses_gpt5_safe_parameters() -> None:
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
             api_key="sk-test-key",
             default_model="gpt-5-chat",
@@ -1014,7 +1014,7 @@ def test_openai_compat_build_kwargs_max_completion_tokens_by_model_name(
     expected_key: str,
 ) -> None:
     spec = find_by_name("custom")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
             api_key="sk-test-key",
             default_model=model_name,
@@ -1039,7 +1039,7 @@ def test_openai_compat_build_kwargs_max_completion_tokens_by_model_name(
 
 
 def test_openai_compat_preserves_message_level_reasoning_fields() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1068,7 +1068,7 @@ def test_openai_compat_preserves_message_level_reasoning_fields() -> None:
 
 
 def _deepseek_kwargs(messages: list[dict]) -> dict:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
             api_key="sk-test",
             default_model="deepseek-v4-flash",
@@ -1132,7 +1132,7 @@ def test_deepseek_thinking_keeps_tool_history_with_reasoning_content() -> None:
 
 
 def test_openai_compat_preserves_tool_call_ids_after_consecutive_assistant_messages() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1160,7 +1160,7 @@ def test_openai_compat_preserves_tool_call_ids_after_consecutive_assistant_messa
 
 
 def test_mistral_normalizes_tool_call_ids_after_consecutive_assistant_messages() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(spec=find_by_name("mistral"))
 
     sanitized = provider._sanitize_messages([
@@ -1188,7 +1188,7 @@ def test_mistral_normalizes_tool_call_ids_after_consecutive_assistant_messages()
 
 
 def test_openai_compat_deduplicates_duplicate_tool_call_ids_in_history() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1223,7 +1223,7 @@ def test_openai_compat_deduplicates_duplicate_tool_call_ids_in_history() -> None
 
 
 def test_openai_compat_stringifies_dict_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1247,7 +1247,7 @@ def test_openai_compat_stringifies_dict_tool_arguments() -> None:
 
 
 def test_openai_compat_repairs_object_like_history_tool_arguments_string() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1271,7 +1271,7 @@ def test_openai_compat_repairs_object_like_history_tool_arguments_string() -> No
 
 
 def test_openai_compat_defaults_missing_tool_arguments_to_empty_object() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages([
@@ -1296,11 +1296,11 @@ def test_openai_compat_defaults_missing_tool_arguments_to_empty_object() -> None
 
 @pytest.mark.asyncio
 async def test_openai_compat_stream_watchdog_returns_error_on_stall(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "0.01")
+    monkeypatch.setenv("NANODESK_STREAM_IDLE_TIMEOUT_S", "0.01")
     mock_create = AsyncMock(return_value=_StalledStream())
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI") as mock_client_class:
         client_instance = mock_client_class.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -1325,7 +1325,7 @@ async def test_openai_compat_stream_watchdog_returns_error_on_stall(monkeypatch)
 
 def _build_kwargs_for(provider_name: str, model: str, reasoning_effort=None):
     spec = find_by_name(provider_name)
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model=model, spec=spec)
     return p._build_kwargs(
         messages=[{"role": "user", "content": "hi"}],
@@ -1429,7 +1429,7 @@ def test_deepseek_backfills_reasoning_content_on_legacy_tool_call_messages() -> 
     messages with tool_calls but no reasoning_content. DeepSeek V4 rejects these
     with 400. _build_kwargs must backfill reasoning_content='' on them."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "search for news"},
@@ -1454,7 +1454,7 @@ def test_deepseek_backfills_reasoning_content_on_legacy_tool_call_messages() -> 
 def test_backfill_does_not_touch_messages_when_thinking_explicitly_off() -> None:
     """When thinking is explicitly disabled, legacy messages must NOT be altered."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},
@@ -1478,7 +1478,7 @@ def test_backfill_does_not_touch_messages_when_thinking_explicitly_off() -> None
 def test_deepseek_v4_backfills_incomplete_reasoning_history_when_effort_implicit() -> None:
     """DeepSeek-V4 reasons natively: backfill even without explicit reasoning_effort."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "system", "content": "system"},
@@ -1507,7 +1507,7 @@ def test_deepseek_chat_keeps_tool_history_when_effort_implicit() -> None:
     """Non-thinking deepseek-chat must keep history untouched and must NOT
     receive backfilled reasoning_content (#3554, #3584)."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-chat", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},
@@ -1533,7 +1533,7 @@ def test_deepseek_chat_keeps_tool_history_when_effort_implicit() -> None:
 def test_deepseek_coerces_list_content_to_string() -> None:
     """DeepSeek chat endpoint expects message.content to be a string."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-chat", spec=spec)
 
     kw = p._build_kwargs(
@@ -1560,7 +1560,7 @@ def test_deepseek_coerces_list_content_to_string() -> None:
 def test_non_deepseek_keeps_list_content() -> None:
     """Only DeepSeek should force string content; OpenAI-compatible providers keep blocks."""
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="gpt-4o", spec=spec)
 
     kw = p._build_kwargs(
@@ -1800,7 +1800,7 @@ def test_qwen_no_extra_body_when_reasoning_effort_omitted() -> None:
 def test_deepseek_no_backfill_when_reasoning_effort_none_string() -> None:
     """reasoning_effort='none' must NOT trigger reasoning_content backfill (thinking inactive)."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},

@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunResult
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.agent.tools.filesystem import FileToolsConfig
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ToolsConfig
-from nanobot.providers.base import GenerationSettings, LLMProvider
-from nanobot.security.workspace_access import build_workspace_scope
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.agent.runner import AgentRunResult
+from nanodesk.agent.subagent import SubagentManager, SubagentStatus
+from nanodesk.agent.tools.filesystem import FileToolsConfig
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import ToolsConfig
+from nanodesk.providers.base import GenerationSettings, LLMProvider
+from nanodesk.security.workspace_access import build_workspace_scope
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 def _runtime(provider: LLMProvider) -> LLMRuntime:
@@ -103,7 +103,7 @@ def test_subagent_prompt_explains_grouped_skill_paths(tmp_path):
     assert "one absolute root and relative SKILL.md paths" in prompt
     assert "Join them when using `read_file`" in prompt
     assert f"Current project workspace: {project.resolve()}" in prompt
-    assert f"Nanobot's agent workspace: {agent_workspace.resolve()}" in prompt
+    assert f"Nanodesk's agent workspace: {agent_workspace.resolve()}" in prompt
     assert f"History log: {agent_workspace.resolve() / 'memory' / 'history.jsonl'}" in prompt
     assert "global-custom" in prompt
     assert "project-custom" not in prompt

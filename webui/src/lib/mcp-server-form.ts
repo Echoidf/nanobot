@@ -44,7 +44,7 @@ export const EMPTY_MCP_SERVER_DRAFT: McpServerDraft = {
 };
 
 /** Backend placeholder description for custom servers without a user note. */
-const MCP_CUSTOM_DEFAULT_DESCRIPTION = "Custom MCP server from nanobot config.";
+const MCP_CUSTOM_DEFAULT_DESCRIPTION = "Custom MCP server from nanodesk config.";
 
 const TRANSPORTS = new Set<McpTransport>(["stdio", "streamableHttp", "sse"]);
 

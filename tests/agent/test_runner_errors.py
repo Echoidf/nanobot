@@ -9,15 +9,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agent.runner_helpers import make_run_spec
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from nanodesk.config.schema import AgentDefaults
+from nanodesk.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 @pytest.mark.asyncio
 async def test_runner_returns_structured_tool_error():
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(return_value=LLMResponse(
@@ -49,7 +49,7 @@ async def test_runner_returns_structured_tool_error():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("control_error", [KeyboardInterrupt, SystemExit])
 async def test_runner_propagates_tool_control_flow_exceptions(control_error: type[BaseException]):
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -83,7 +83,7 @@ async def test_runner_propagates_tool_control_flow_exceptions(control_error: typ
 async def test_llm_error_not_appended_to_session_messages():
     """When LLM returns finish_reason='error', the error content must NOT be
     appended to the messages list (prevents polluting session history)."""
-    from nanobot.agent.runner import (
+    from nanodesk.agent.runner import (
         _PERSISTED_MODEL_ERROR_PLACEHOLDER,
         AgentRunner,
     )
@@ -121,7 +121,7 @@ async def test_llm_error_not_appended_to_session_messages():
     ],
 )
 async def test_runner_retries_recoverable_model_errors_and_reports_status(error_text: str):
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(side_effect=[
@@ -151,7 +151,7 @@ async def test_runner_retries_recoverable_model_errors_and_reports_status(error_
 
 @pytest.mark.asyncio
 async def test_runner_stops_after_five_model_error_retries():
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     error_text = "Error calling LLM: Connection error"
     provider = MagicMock(spec=LLMProvider)
@@ -181,7 +181,7 @@ async def test_runner_stops_after_five_model_error_retries():
 @pytest.mark.asyncio
 async def test_llm_arrearage_error_surfaces_clear_message():
     """Arrearage errors yield a clear user-facing message, not a raw dump (#3006)."""
-    from nanobot.agent.runner import _ARREARAGE_ERROR_MESSAGE, AgentRunner
+    from nanodesk.agent.runner import _ARREARAGE_ERROR_MESSAGE, AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(return_value=LLMResponse(
@@ -217,7 +217,7 @@ async def test_runner_ignores_tool_calls_when_finish_reason_blocks_execution(
     expected_stop_reason: str,
 ):
     """Provider/gateway-injected tool calls under terminal block reasons must not run."""
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(return_value=LLMResponse(
@@ -247,7 +247,7 @@ async def test_runner_ignores_tool_calls_when_finish_reason_blocks_execution(
 
 @pytest.mark.asyncio
 async def test_runner_tool_error_sets_final_content():
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -279,7 +279,7 @@ async def test_runner_tool_error_sets_final_content():
 
 @pytest.mark.asyncio
 async def test_runner_preserves_successful_exec_output_that_starts_with_error():
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -321,7 +321,7 @@ async def test_runner_preserves_successful_exec_output_that_starts_with_error():
 async def test_runner_tool_error_preserves_tool_results_in_messages():
     """When a tool raises a fatal error, its results must still be appended
     to messages so the session never contains orphan tool_calls (#2943)."""
-    from nanobot.agent.runner import AgentRunner
+    from nanodesk.agent.runner import AgentRunner
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -388,8 +388,8 @@ async def test_length_finish_with_blank_content_routes_to_length_recovery():
     retry path. Retrying the same prompt cannot recover from output-budget
     exhaustion.
     """
-    from nanobot.agent.runner import AgentRunner
-    from nanobot.utils.runtime import LENGTH_RECOVERY_PROMPT
+    from nanodesk.agent.runner import AgentRunner
+    from nanodesk.utils.runtime import LENGTH_RECOVERY_PROMPT
 
     provider = MagicMock(spec=LLMProvider)
     # First call: truncated (length) with blank content and a dropped tool call.

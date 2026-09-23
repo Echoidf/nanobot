@@ -8,15 +8,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agent.runner_helpers import make_run_spec
-from nanobot.agent.runner import AgentRunner
-from nanobot.agent.tools.base import Tool, ToolResult
-from nanobot.agent.tools.context import ToolContext
-from nanobot.agent.tools.loader import ToolLoader
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.openai_responses.parsing import parse_response_output
+from nanodesk.agent.runner import AgentRunner
+from nanodesk.agent.tools.base import Tool, ToolResult
+from nanodesk.agent.tools.context import ToolContext
+from nanodesk.agent.tools.loader import ToolLoader
+from nanodesk.agent.tools.registry import ToolRegistry
+from nanodesk.config.schema import AgentDefaults
+from nanodesk.providers.base import LLMResponse, ToolCallRequest
+from nanodesk.providers.openai_compat_provider import OpenAICompatProvider
+from nanodesk.providers.openai_responses.parsing import parse_response_output
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -98,6 +98,23 @@ class _StructuredSuccessPluginTool(Tool):
         return ToolResult("Error: generated report successfully")
 
 
+class _TerminalTool(Tool):
+    @property
+    def name(self) -> str:
+        return "terminal_tool"
+
+    @property
+    def description(self) -> str:
+        return "delivers an interactive response and ends the turn"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}, "required": []}
+
+    async def execute(self, **kwargs):
+        return ToolResult.terminal("delivered")
+
+
 async def _run_optional_tool_response(response: LLMResponse):
     provider = MagicMock()
     calls = {"n": 0}
@@ -134,7 +151,7 @@ def _load_entry_point_plugin(tool_cls: type[Tool], tmp_path) -> ToolRegistry:
     mock_ep.load.return_value = tool_cls
 
     registry = ToolRegistry()
-    with patch("nanobot.agent.tools.loader.entry_points", return_value=[mock_ep]):
+    with patch("nanodesk.agent.tools.loader.entry_points", return_value=[mock_ep]):
         ToolLoader(test_classes=[]).load(
             ToolContext(config=None, workspace=str(tmp_path)),
             registry,
@@ -321,7 +338,7 @@ async def test_runner_rejects_near_miss_tool_name_without_executing():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arguments", ['{path:"notes.txt"}', "null"])
 async def test_runner_rejects_openai_compat_invalid_arguments_without_executing(arguments):
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("nanodesk.providers.openai_compat_provider.AsyncOpenAI"):
         parsed = OpenAICompatProvider()._parse({
             "choices": [{
                 "message": {
@@ -395,6 +412,37 @@ async def test_runner_rejects_openai_responses_array_arguments_without_executing
     assert shared_events == []
     tool_message = _tool_message(result, "call_1|fc_1")
     assert "parameters must be a JSON object" in tool_message["content"]
+
+
+@pytest.mark.asyncio
+async def test_runner_ends_turn_after_terminal_tool_result() -> None:
+    provider = MagicMock()
+    provider.chat_with_retry = AsyncMock(return_value=LLMResponse(
+        content="calling the interactive tool",
+        tool_calls=[ToolCallRequest(id="call_terminal", name="terminal_tool", arguments={})],
+        usage={},
+    ))
+    tools = ToolRegistry()
+    tools.register(_TerminalTool())
+
+    result = await AgentRunner().run(make_run_spec(
+        provider,
+        initial_messages=[{"role": "user", "content": "show choices"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=2,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+    ))
+
+    assert provider.chat_with_retry.await_count == 1
+    assert result.stop_reason == "tool_terminal"
+    assert result.final_content == ""
+    assert result.messages[-1] == {
+        "role": "tool",
+        "tool_call_id": "call_terminal",
+        "name": "terminal_tool",
+        "content": "delivered",
+    }
 
 
 @pytest.mark.asyncio

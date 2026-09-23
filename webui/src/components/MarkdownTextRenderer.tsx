@@ -15,6 +15,7 @@ import remarkMath from "remark-math";
 import { Streamdown, type Components, type StreamdownProps } from "streamdown";
 
 import { AttachmentTile } from "@/components/AttachmentTile";
+import { CardOptions } from "@/components/cards/CardOptions";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
   INLINE_TOKEN_HIGHLIGHT_COLOR,
@@ -30,6 +31,7 @@ import {
   isLikelyFilePath,
 } from "@/components/FileReferenceChip";
 import { useLogoFallback } from "@/hooks/useLogoFallback";
+import { parseCardOptionsFence } from "@/lib/card-options";
 import { inferMediaKind } from "@/lib/media";
 import { browserSafeFaviconUrls } from "@/lib/provider-brand";
 import { remarkTexMath } from "@/lib/remark-tex-math";
@@ -44,6 +46,8 @@ interface MarkdownTextRendererProps {
   highlightCode?: boolean;
   streaming?: boolean;
   onOpenFilePreview?: (path: string) => void;
+  /** Forwarded to card groups parsed out of ```cards fences. */
+  onCardOptionSelect?: (value: string) => void;
 }
 
 type MarkdownAstNode = {
@@ -517,6 +521,7 @@ export default function MarkdownTextRenderer({
   highlightCode = true,
   streaming = false,
   onOpenFilePreview,
+  onCardOptionSelect,
 }: MarkdownTextRendererProps) {
   const { t } = useTranslation();
   const components = useMemo<Components>(
@@ -526,6 +531,11 @@ export default function MarkdownTextRenderer({
         const match = /language-(\w+)/.exec(cls || "");
         if (match) {
           const code = String(kids).replace(/\n$/, "");
+          // ```cards fences become a live option group instead of code.
+          if (match[1].toLowerCase() === "cards") {
+            const cardData = parseCardOptionsFence(code);
+            if (cardData) return <CardOptions data={cardData} onSelect={onCardOptionSelect} />;
+          }
           return (
             <CodeBlock
               language={match[1]}
@@ -576,12 +586,20 @@ export default function MarkdownTextRenderer({
       pre({ children: markdownChildren }) {
         const kids = Children.toArray(markdownChildren);
         const lone = kids.length === 1 ? kids[0] : null;
+        /** The code mapping may already have produced a card group. */
+        if (isValidElement(lone) && lone.type === CardOptions) {
+          return <>{markdownChildren}</>;
+        }
         /** Highlighted fences render ``CodeBlock`` (block shell); skip invalid ``<pre><div>``. */
         if (isRenderedCodeBlock(lone)) {
           return <>{markdownChildren}</>;
         }
         const fence = codeFenceFromPreChild(lone);
         if (fence) {
+          if (fence.language?.toLowerCase() === "cards") {
+            const cardData = parseCardOptionsFence(fence.code);
+            if (cardData) return <CardOptions data={cardData} onSelect={onCardOptionSelect} />;
+          }
           return (
             <CodeBlock
               language={fence.language || "text"}
@@ -790,7 +808,7 @@ export default function MarkdownTextRenderer({
         );
       },
     }),
-    [highlightCode, onOpenFilePreview, t],
+    [highlightCode, onCardOptionSelect, onOpenFilePreview, t],
   );
 
   return (

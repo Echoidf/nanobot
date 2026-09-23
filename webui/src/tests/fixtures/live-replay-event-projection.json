@@ -595,6 +595,152 @@
           "turnSeq": 4
         }
       ]
+    },
+    {
+      "name": "structured_card_options_group",
+      "chat_id": "fixture-cards",
+      "initial_messages": [
+        {
+          "id": "fixture-user-cards",
+          "role": "user",
+          "content": "Set up alerts for this project.",
+          "turnId": "turn-cards",
+          "turnPhase": "user",
+          "turnSeq": 1,
+          "createdAt": 1700000004000
+        }
+      ],
+      "live_events": [
+        {
+          "event": "message",
+          "chat_id": "fixture-cards",
+          "text": "Which channel should send the alerts?",
+          "turn_id": "turn-cards",
+          "turn_phase": "answer",
+          "turn_seq": 2,
+          "agent_ui": {
+            "kind": "card_options",
+            "data": {
+              "type": "card_options",
+              "question": "Which channel should send the alerts?",
+              "options": [
+                {
+                  "id": "email",
+                  "title": "Email",
+                  "value": "email",
+                  "icon": "mail"
+                },
+                {
+                  "id": "option-2",
+                  "title": "SMS",
+                  "value": "sms",
+                  "description": "短信提醒",
+                  "kind": "progress",
+                  "progress": 60
+                }
+              ],
+              "allowCustomInput": true
+            }
+          }
+        },
+        {
+          "event": "turn_end",
+          "chat_id": "fixture-cards",
+          "turn_id": "turn-cards",
+          "turn_seq": 3,
+          "latency_ms": 8,
+          "created_at_ms": 1700000005000
+        }
+      ],
+      "transcript": [
+        {
+          "event": "user",
+          "chat_id": "fixture-cards",
+          "text": "Set up alerts for this project.",
+          "turn_id": "turn-cards",
+          "turn_phase": "user",
+          "turn_seq": 1,
+          "created_at_ms": 1700000004000
+        },
+        {
+          "event": "message",
+          "chat_id": "fixture-cards",
+          "text": "Which channel should send the alerts?",
+          "turn_id": "turn-cards",
+          "turn_phase": "answer",
+          "turn_seq": 2,
+          "agent_ui": {
+            "kind": "card_options",
+            "data": {
+              "type": "card_options",
+              "question": "Which channel should send the alerts?",
+              "options": [
+                {
+                  "id": "email",
+                  "title": "Email",
+                  "value": "email",
+                  "icon": "mail"
+                },
+                {
+                  "id": "option-2",
+                  "title": "SMS",
+                  "value": "sms",
+                  "description": "短信提醒",
+                  "kind": "progress",
+                  "progress": 60
+                }
+              ],
+              "allowCustomInput": true
+            }
+          }
+        },
+        {
+          "event": "turn_end",
+          "chat_id": "fixture-cards",
+          "turn_id": "turn-cards",
+          "turn_seq": 3,
+          "latency_ms": 8,
+          "created_at_ms": 1700000005000
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "content": "Set up alerts for this project.",
+          "turnId": "turn-cards",
+          "turnPhase": "user",
+          "turnSeq": 1
+        },
+        {
+          "role": "assistant",
+          "content": "Which channel should send the alerts?",
+          "cardOptions": {
+            "type": "card_options",
+            "question": "Which channel should send the alerts?",
+            "options": [
+              {
+                "id": "email",
+                "title": "Email",
+                "value": "email",
+                "icon": "mail"
+              },
+              {
+                "id": "option-2",
+                "title": "SMS",
+                "value": "sms",
+                "description": "短信提醒",
+                "kind": "progress",
+                "progress": 60
+              }
+            ],
+            "allowCustomInput": true
+          },
+          "latencyMs": 8,
+          "turnId": "turn-cards",
+          "turnPhase": "answer",
+          "turnSeq": 2
+        }
+      ]
     }
   ]
 }

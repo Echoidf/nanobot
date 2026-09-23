@@ -32,19 +32,19 @@
 | `@` 提及补全框架 | `webui/src/components/thread/ThreadComposer.tsx` | `mentionInsertion()`、`CliAppMentionToken`、palette 弹出/过滤/高亮、`MentionCandidate` 类型 |
 | 附件上传 | `webui/src/hooks/useAttachedImages.ts` | 附件显示 chip、`SendAttachment` 类型 |
 | 工作区作用域 | `webui/src/lib/workspace.ts`、`WorkspaceControls.tsx` | `WorkspaceScopePayload` 结构、作用域来源 |
-| 消息发送协议 | `webui/src/lib/nanobot-client.ts` 的 `send()` | `options` 扩展模式（已有 `sessionMentions`、`cliApps` 等结构化字段） |
+| 消息发送协议 | `webui/src/lib/nanodesk-client.ts` 的 `send()` | `options` 扩展模式（已有 `sessionMentions`、`cliApps` 等结构化字段） |
 | 文件预览 | `webui/src/lib/api.ts` 的 `fetchFilePreview` | 已有通过 workspace scope 读文件文本的 API |
 
 ### 4.2 后端
 
 | 已有模块 | 位置 | 可复用部分 |
 |---|---|---|
-| 文件预览 & 安全校验 | `nanobot/webui/file_preview.py` | `resolve_allowed_path`、`WorkspaceScope`、`WorkspaceBoundaryError` 处理 |
-| 工作区安全策略 | `nanobot/security/workspace_policy.py` | `resolve_allowed_path()` 路径解析 + 越界拦截 |
-| 附件引用注入 | `nanobot/agent/loop.py` 的 `_restore_turn()` | `[Attachment: path]` 注入机制，可作为类似参考 |
+| 文件预览 & 安全校验 | `nanodesk/webui/file_preview.py` | `resolve_allowed_path`、`WorkspaceScope`、`WorkspaceBoundaryError` 处理 |
+| 工作区安全策略 | `nanodesk/security/workspace_policy.py` | `resolve_allowed_path()` 路径解析 + 越界拦截 |
+| 附件引用注入 | `nanodesk/agent/loop.py` 的 `_restore_turn()` | `[Attachment: path]` 注入机制，可作为类似参考 |
 | 附件引用测试 | `tests/agent/test_attachment_references.py` | 引用持久化、读取的测试模式 |
-| 入站消息解析 | `nanobot/channels/websocket/runtime.py` 的 `_parse_envelope()` | 解析结构化字段的框架 |
-| 路由注册 | `nanobot/webui/ws_http.py` | 鉴权 + 路由分发模式 |
+| 入站消息解析 | `nanodesk/channels/websocket/runtime.py` 的 `_parse_envelope()` | 解析结构化字段的框架 |
+| 路由注册 | `nanodesk/webui/ws_http.py` | 鉴权 + 路由分发模式 |
 
 ### 4.3 消息协议（现有 Outbound 帧示例）
 
@@ -66,12 +66,12 @@
 
 ### 5.1 协议层：envelope 增加 `path_refs` 字段
 
-**文件：** `webui/src/lib/nanobot-client.ts`、`nanobot/channels/websocket/runtime.py`
+**文件：** `webui/src/lib/nanodesk-client.ts`、`nanodesk/channels/websocket/runtime.py`
 
 在现有 `send()` 的 `options` 中新增字段：
 
 ```typescript
-// nanobot-client.ts send() options
+// nanodesk-client.ts send() options
 pathRefs?: { path: string; kind: "file" | "folder" }[];
 ```
 
@@ -95,7 +95,7 @@ pathRefs?: { path: string; kind: "file" | "folder" }[];
 
 ### 5.2 后端 API：工作区文件浏览/搜索接口
 
-**新增文件：** `nanobot/webui/workspace_files.py`
+**新增文件：** `nanodesk/webui/workspace_files.py`
 
 ```
 GET /api/webui/workspace/files?dir=<path>&q=<query>&scope=session_key
@@ -115,7 +115,7 @@ GET /api/webui/workspace/files?dir=<path>&q=<query>&scope=session_key
 
 **安全：** 复用 `file_preview.py` 的 `resolve_allowed_path` + `WorkspaceScope`，不新增安全路径。
 
-**注册路由：** `nanobot/webui/ws_http.py` 的 `_handle_webui_route()` 增加：
+**注册路由：** `nanodesk/webui/ws_http.py` 的 `_handle_webui_route()` 增加：
 
 ```python
 if got == "/api/webui/workspace/files":
@@ -124,7 +124,7 @@ if got == "/api/webui/workspace/files":
 
 ### 5.3 Agent 侧：引用注入
 
-**文件：** `nanobot/agent/loop.py` 的 `_restore_turn()`（与 `[Attachment: path]` 同位置）
+**文件：** `nanodesk/agent/loop.py` 的 `_restore_turn()`（与 `[Attachment: path]` 同位置）
 
 **逻辑：**
 
@@ -193,7 +193,7 @@ interface FileRefCandidate {
 
 ### 5.5 会话持久化
 
-**文件：** `nanobot/session/manager.py`、`nanobot/webui/session_list_index.py`
+**文件：** `nanodesk/session/manager.py`、`nanodesk/webui/session_list_index.py`
 
 `path_refs` 随消息一起持久化（类似 `session_mentions`），刷新后能恢复引用标记：
 - 序列化时 `path_refs` 作为消息的附属字段
@@ -253,15 +253,15 @@ interface FileRefCandidate {
 
 ### Phase 1 — 后端 API + 安全（独立可验证，不依赖前端）
 
-1. 新建 `nanobot/webui/workspace_files.py`：实现 `GET /api/webui/workspace/files` 接口
-2. `nanobot/webui/ws_http.py`：注册路由 + 鉴权
+1. 新建 `nanodesk/webui/workspace_files.py`：实现 `GET /api/webui/workspace/files` 接口
+2. `nanodesk/webui/ws_http.py`：注册路由 + 鉴权
 3. 写 `tests/webui/test_workspace_files.py` 覆盖所有边界
 4. 验证：`curl` 直接调用 API 检查
 
 ### Phase 2 — 协议字段 + Agent 注入
 
-1. `nanobot/channels/websocket/runtime.py`：解析 `path_refs` 字段
-2. `nanobot/agent/loop.py` `_restore_turn()`：处理引用注入逻辑
+1. `nanodesk/channels/websocket/runtime.py`：解析 `path_refs` 字段
+2. `nanodesk/agent/loop.py` `_restore_turn()`：处理引用注入逻辑
 3. 追加 `tests/agent/test_attachment_references.py` 覆盖引用场景
 4. 验证：CLI 发送含 `path_refs` 的模拟消息，检查 agent 上下文是否包含文件内容
 
@@ -269,7 +269,7 @@ interface FileRefCandidate {
 
 1. `webui/src/hooks/useWorkspaceFileRefs.ts`：防抖查询 hook
 2. `webui/src/components/thread/ThreadComposer.tsx`：扩展 `@` 检测逻辑，加入文件候选
-3. `webui/src/lib/nanobot-client.ts`：`send()` 增加 `pathRefs` 选项
+3. `webui/src/lib/nanodesk-client.ts`：`send()` 增加 `pathRefs` 选项
 4. 消息气泡展示引用 chip
 5. 追加 `webui/src/tests/thread-composer.test.tsx` 测试
 6. 验证：端到端输入 `@` → 补全 → 发送 → agent 读取
@@ -277,7 +277,7 @@ interface FileRefCandidate {
 ## 9. 参考资料
 
 - 现有 `@` 提及补全框架：`webui/src/components/thread/ThreadComposer.tsx` 的 `filteredMentionCandidates`、`mentionInsertion()`、`CapabilityMentionToken`
-- 现有附件引用注入：`nanobot/agent/loop.py` 的 `_restore_turn()` 中 `[Attachment: path]` 处理逻辑
-- 现有文件预览安全校验：`nanobot/webui/file_preview.py` 的 `resolve_allowed_path` + `WorkspaceScope`
-- 现有工作区作用域协议：`webui/src/lib/workspace.ts`、`nanobot/security/workspace_policy.py`
+- 现有附件引用注入：`nanodesk/agent/loop.py` 的 `_restore_turn()` 中 `[Attachment: path]` 处理逻辑
+- 现有文件预览安全校验：`nanodesk/webui/file_preview.py` 的 `resolve_allowed_path` + `WorkspaceScope`
+- 现有工作区作用域协议：`webui/src/lib/workspace.ts`、`nanodesk/security/workspace_policy.py`
 - 测试参考：`tests/agent/test_attachment_references.py`

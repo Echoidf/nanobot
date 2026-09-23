@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from nanobot.agent.automation_turns import AutomationTurnError
-from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.triggers.local_runner import run_local_trigger_queue
-from nanobot.triggers.local_store import LocalTriggerStore, TriggerDisabledError
-from nanobot.triggers.local_types import LocalTrigger, TriggerDelivery
-from nanobot.webui.metadata import WEBUI_MESSAGE_SOURCE_METADATA_KEY, WEBUI_TURN_METADATA_KEY
+from nanodesk.agent.automation_turns import AutomationTurnError
+from nanodesk.bus.events import InboundMessage, OutboundMessage
+from nanodesk.triggers.local_runner import run_local_trigger_queue
+from nanodesk.triggers.local_store import LocalTriggerStore, TriggerDisabledError
+from nanodesk.triggers.local_types import LocalTrigger, TriggerDelivery
+from nanodesk.webui.metadata import WEBUI_MESSAGE_SOURCE_METADATA_KEY, WEBUI_TURN_METADATA_KEY
 
 
 def _channel_is_enabled(_name: str) -> bool:

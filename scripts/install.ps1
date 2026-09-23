@@ -7,11 +7,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Package = "nanobot-ai"
+$Package = "nanodesk-ai"
 $InstallTarget = $Package
 $InstallSource = "PyPI"
-$script:NanobotRunner = $null
-$script:NanobotPython = $null
+$script:NanodeskRunner = $null
+$script:NanodeskPython = $null
 $script:LastInstallSucceeded = $false
 
 function Write-Info {
@@ -25,21 +25,21 @@ function Fail {
 }
 
 function Show-InstallFailureHint {
-    [Console]::Error.WriteLine("Error: could not install nanobot from $InstallSource.")
+    [Console]::Error.WriteLine("Error: could not install nanodesk from $InstallSource.")
     [Console]::Error.WriteLine("If pip mentioned externally-managed-environment, use uv, pipx, or a virtual environment instead of system pip.")
     [Console]::Error.WriteLine("You can also run manually:")
     [Console]::Error.WriteLine("  uv tool install --force --upgrade $InstallTarget")
-    [Console]::Error.WriteLine("  $Python -m venv `$HOME\.nanobot\venv")
-    [Console]::Error.WriteLine("  `$HOME\.nanobot\venv\Scripts\python.exe -m pip install --upgrade $InstallTarget")
+    [Console]::Error.WriteLine("  $Python -m venv `$HOME\.nanodesk\venv")
+    [Console]::Error.WriteLine("  `$HOME\.nanodesk\venv\Scripts\python.exe -m pip install --upgrade $InstallTarget")
     [Console]::Error.WriteLine("Then start setup with:")
-    [Console]::Error.WriteLine("  nanobot onboard --wizard")
-    throw "could not install nanobot from $InstallSource"
+    [Console]::Error.WriteLine("  nanodesk onboard --wizard")
+    throw "could not install nanodesk from $InstallSource"
 }
 
 function Show-Usage {
     Write-Host "Usage: install.ps1 [-DryRun|--dry-run]"
     Write-Host ""
-    Write-Host "By default this installs or upgrades nanobot-ai from PyPI."
+    Write-Host "By default this installs or upgrades nanodesk-ai from PyPI."
     Write-Host "Use --dry-run to print what would happen without installing or starting setup."
     Write-Host ""
     Write-Host "For current main, clone the repository and run 'python -m pip install -e .'."
@@ -105,40 +105,40 @@ function Ensure-Pip {
     }
 }
 
-function Invoke-Nanobot {
-    param([string[]]$NanobotArgs)
+function Invoke-Nanodesk {
+    param([string[]]$NanodeskArgs)
 
-    switch ($script:NanobotRunner) {
+    switch ($script:NanodeskRunner) {
         "uv" {
-            & uv tool run --from $InstallTarget nanobot @NanobotArgs
+            & uv tool run --from $InstallTarget nanodesk @NanodeskArgs
         }
         "pipx" {
-            & pipx run --spec $InstallTarget nanobot @NanobotArgs
+            & pipx run --spec $InstallTarget nanodesk @NanodeskArgs
         }
         "python" {
-            & $script:NanobotPython -m nanobot @NanobotArgs
+            & $script:NanodeskPython -m nanodesk @NanodeskArgs
         }
         default {
-            Fail "nanobot was installed, but no runner was configured."
+            Fail "nanodesk was installed, but no runner was configured."
         }
     }
 }
 
-function Get-NanobotCommand {
-    switch ($script:NanobotRunner) {
-        "uv" { return "uv tool run --from $InstallTarget nanobot" }
-        "pipx" { return "pipx run --spec $InstallTarget nanobot" }
-        "python" { return "$script:NanobotPython -m nanobot" }
-        default { return "nanobot" }
+function Get-NanodeskCommand {
+    switch ($script:NanodeskRunner) {
+        "uv" { return "uv tool run --from $InstallTarget nanodesk" }
+        "pipx" { return "pipx run --spec $InstallTarget nanodesk" }
+        "python" { return "$script:NanodeskPython -m nanodesk" }
+        default { return "nanodesk" }
     }
 }
 
-function Test-FreshNanobotInstall {
+function Test-FreshNanodeskInstall {
     $HomeDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
     if (-not $HomeDir) {
         return $false
     }
-    return -not (Test-Path -LiteralPath (Join-Path $HomeDir ".nanobot\config.json"))
+    return -not (Test-Path -LiteralPath (Join-Path $HomeDir ".nanodesk\config.json"))
 }
 
 function Test-BrowserSession {
@@ -160,29 +160,29 @@ function Install-WithActivePython {
     if ($LASTEXITCODE -ne 0) {
         Show-InstallFailureHint
     }
-    $script:NanobotRunner = "python"
-    $script:NanobotPython = $Python
+    $script:NanodeskRunner = "python"
+    $script:NanodeskPython = $Python
 }
 
 function Install-WithUv {
     $script:LastInstallSucceeded = $false
-    Write-Info "Installing or upgrading nanobot from $InstallSource with uv tool..."
+    Write-Info "Installing or upgrading nanodesk from $InstallSource with uv tool..."
     & uv tool install --python $Python --force --upgrade $InstallTarget
     if ($LASTEXITCODE -ne 0) {
         return
     }
-    $script:NanobotRunner = "uv"
+    $script:NanodeskRunner = "uv"
     $script:LastInstallSucceeded = $true
 }
 
 function Install-WithPipx {
     $script:LastInstallSucceeded = $false
-    Write-Info "Installing or upgrading nanobot from $InstallSource with pipx..."
+    Write-Info "Installing or upgrading nanodesk from $InstallSource with pipx..."
     & pipx install --python $Python --force $InstallTarget
     if ($LASTEXITCODE -ne 0) {
         return
     }
-    $script:NanobotRunner = "pipx"
+    $script:NanodeskRunner = "pipx"
     $script:LastInstallSucceeded = $true
 }
 
@@ -192,7 +192,7 @@ function Install-WithManagedVenv {
         Fail "HOME is not set; cannot create a managed virtual environment."
     }
 
-    $VenvDir = if ($env:NANOBOT_VENV) { $env:NANOBOT_VENV } else { Join-Path $HomeDir ".nanobot\venv" }
+    $VenvDir = if ($env:NANODESK_VENV) { $env:NANODESK_VENV } else { Join-Path $HomeDir ".nanodesk\venv" }
     $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
     if (-not (Test-Path $VenvPython)) {
@@ -208,18 +208,18 @@ function Install-WithManagedVenv {
     }
 
     if (-not (Test-Python $VenvPython)) {
-        Fail "The managed venv uses Python older than 3.11. Remove it or set NANOBOT_VENV to a new path."
+        Fail "The managed venv uses Python older than 3.11. Remove it or set NANODESK_VENV to a new path."
     }
 
-    Write-Info "Installing or upgrading nanobot from $InstallSource in $VenvDir..."
+    Write-Info "Installing or upgrading nanodesk from $InstallSource in $VenvDir..."
     Ensure-Pip $VenvPython
     & $VenvPython -m pip install --upgrade $InstallTarget
     if ($LASTEXITCODE -ne 0) {
         Show-InstallFailureHint
     }
 
-    $script:NanobotRunner = "python"
-    $script:NanobotPython = $VenvPython
+    $script:NanodeskRunner = "python"
+    $script:NanodeskPython = $VenvPython
 }
 
 foreach ($Arg in $RemainingArgs) {
@@ -253,26 +253,26 @@ $Version = & $Python --version
 Write-Info "Using Python: $Version"
 
 if ($DryRun) {
-    Write-Info "Dry run: would install or upgrade nanobot from $InstallSource."
+    Write-Info "Dry run: would install or upgrade nanodesk from $InstallSource."
     if (Test-VirtualEnv $Python) {
         Write-Info "Dry run: active virtual environment detected; would run: $Python -m pip install --upgrade $InstallTarget"
-        Write-Info "Dry run: would run nanobot as: $Python -m nanobot"
+        Write-Info "Dry run: would run nanodesk as: $Python -m nanodesk"
     } elseif (Get-Command uv -ErrorAction SilentlyContinue) {
         Write-Info "Dry run: would run: uv tool install --python $Python --force --upgrade $InstallTarget"
-        Write-Info "Dry run: would run nanobot as: uv tool run --from $InstallTarget nanobot"
+        Write-Info "Dry run: would run nanodesk as: uv tool run --from $InstallTarget nanodesk"
     } elseif (Get-Command pipx -ErrorAction SilentlyContinue) {
         Write-Info "Dry run: would run: pipx install --python $Python --force $InstallTarget"
-        Write-Info "Dry run: would run nanobot as: pipx run --spec $InstallTarget nanobot"
+        Write-Info "Dry run: would run nanodesk as: pipx run --spec $InstallTarget nanodesk"
     } else {
         $HomeDir = if ($env:HOME) { $env:HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { "~" }
-        $VenvDir = if ($env:NANOBOT_VENV) { $env:NANOBOT_VENV } else { Join-Path $HomeDir ".nanobot\venv" }
+        $VenvDir = if ($env:NANODESK_VENV) { $env:NANODESK_VENV } else { Join-Path $HomeDir ".nanodesk\venv" }
         Write-Info "Dry run: would create or reuse a dedicated virtual environment: $VenvDir"
         Write-Info "Dry run: would run: $VenvDir\Scripts\python.exe -m pip install --upgrade $InstallTarget"
-        Write-Info "Dry run: would run nanobot as: $VenvDir\Scripts\python.exe -m nanobot"
+        Write-Info "Dry run: would run nanodesk as: $VenvDir\Scripts\python.exe -m nanodesk"
     }
-    if ($env:NANOBOT_SKIP_WIZARD -eq "1") {
-        Write-Info "Dry run: would skip automatic setup because NANOBOT_SKIP_WIZARD=1."
-    } elseif ((Test-FreshNanobotInstall) -and (Test-BrowserSession)) {
+    if ($env:NANODESK_SKIP_WIZARD -eq "1") {
+        Write-Info "Dry run: would skip automatic setup because NANODESK_SKIP_WIZARD=1."
+    } elseif ((Test-FreshNanodeskInstall) -and (Test-BrowserSession)) {
         Write-Info "Dry run: would start the WebUI for this fresh desktop install."
         Write-Info "Dry run: would fall back to the setup wizard for older releases."
     } else {
@@ -309,38 +309,38 @@ if (Test-VirtualEnv $Python) {
     }
 }
 
-Write-Info "Installed nanobot:"
-Invoke-Nanobot @("--version")
+Write-Info "Installed nanodesk:"
+Invoke-Nanodesk @("--version")
 if ($LASTEXITCODE -ne 0) {
-    Fail "nanobot was installed, but the command could not be started."
+    Fail "nanodesk was installed, but the command could not be started."
 }
 
-if ($env:NANOBOT_SKIP_WIZARD -eq "1") {
-    Write-Info "Skipping automatic setup because NANOBOT_SKIP_WIZARD=1."
-    Write-Info "Run this later: $(Get-NanobotCommand) webui"
+if ($env:NANODESK_SKIP_WIZARD -eq "1") {
+    Write-Info "Skipping automatic setup because NANODESK_SKIP_WIZARD=1."
+    Write-Info "Run this later: $(Get-NanodeskCommand) webui"
     return
 }
 
-if ((Test-FreshNanobotInstall) -and (Test-BrowserSession)) {
-    Invoke-Nanobot @("webui", "--help") *> $null
+if ((Test-FreshNanodeskInstall) -and (Test-BrowserSession)) {
+    Invoke-Nanodesk @("webui", "--help") *> $null
     if ($LASTEXITCODE -eq 0) {
-        Write-Info "Starting nanobot WebUI..."
+        Write-Info "Starting nanodesk WebUI..."
         Write-Info "Configure your first provider and model in Settings > Models."
-        Write-Info "Run this later: $(Get-NanobotCommand) webui"
-        Invoke-Nanobot @("webui", "--yes")
+        Write-Info "Run this later: $(Get-NanodeskCommand) webui"
+        Invoke-Nanodesk @("webui", "--yes")
         if ($LASTEXITCODE -ne 0) {
             Fail "WebUI did not start."
         }
         return
     }
-    Write-Info "The installed release does not support nanobot webui yet."
+    Write-Info "The installed release does not support nanodesk webui yet."
     Write-Info "Falling back to the setup wizard..."
 }
 
 Write-Info "Starting setup wizard..."
-Invoke-Nanobot @("onboard", "--wizard")
+Invoke-Nanodesk @("onboard", "--wizard")
 if ($LASTEXITCODE -ne 0) {
     Fail "Setup wizard did not complete."
 }
 
-Write-Info "Done. Try: $(Get-NanobotCommand) agent -m `"Hello!`""
+Write-Info "Done. Try: $(Get-NanodeskCommand) agent -m `"Hello!`""

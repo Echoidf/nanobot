@@ -1,11 +1,11 @@
 from types import SimpleNamespace
 
-from nanobot.agent.tools.context import ToolContext
-from nanobot.agent.tools.file_state import FileStates
-from nanobot.agent.tools.filesystem import FileToolsConfig, ReadFileTool
-from nanobot.agent.tools.loader import ToolLoader
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.config.schema import Config, ToolsConfig
+from nanodesk.agent.tools.context import ToolContext
+from nanodesk.agent.tools.file_state import FileStates
+from nanodesk.agent.tools.filesystem import FileToolsConfig, ReadFileTool
+from nanodesk.agent.tools.loader import ToolLoader
+from nanodesk.agent.tools.registry import ToolRegistry
+from nanodesk.config.schema import Config, ToolsConfig
 
 FILE_TOOL_NAMES = {
     "apply_patch",

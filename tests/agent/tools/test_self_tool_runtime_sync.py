@@ -4,10 +4,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.runtime_control import AgentRuntimeControl
-from nanobot.agent.tools.self import MyTool
-from nanobot.bus.queue import MessageBus
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.agent.tools.runtime_control import AgentRuntimeControl
+from nanodesk.agent.tools.self import MyTool
+from nanodesk.bus.queue import MessageBus
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from nanobot.webui.transcript import replay_transcript_to_ui_messages
+from nanodesk.webui.transcript import replay_transcript_to_ui_messages
 
 _FIXTURE_PATH = (
     Path(__file__).parents[2]
@@ -29,6 +29,7 @@ _SEMANTIC_MESSAGE_FIELDS = (
     "mcpPresets",
     "sessionMentions",
     "reasoning",
+    "cardOptions",
     "latencyMs",
     "source",
     "turnId",

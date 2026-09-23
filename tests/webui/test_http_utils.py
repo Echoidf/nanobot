@@ -3,7 +3,7 @@
 import gzip
 import json
 
-from nanobot.webui.http_utils import http_json_response, issue_route_secret_matches
+from nanodesk.webui.http_utils import http_json_response, issue_route_secret_matches
 
 
 def test_http_json_response_compresses_large_payload_when_gzip_is_accepted() -> None:
@@ -43,10 +43,10 @@ def test_issue_route_secret_matches_accepts_bearer_and_both_auth_headers() -> No
 
     assert issue_route_secret_matches({"Authorization": f"Bearer {secret}"}, secret) is True
     # The WebUI bundle sends the bootstrap credential as X-Nanodesk-Auth; older
-    # clients used X-Nanobot-Auth. Both must be accepted.
+    # clients used X-Nanodesk-Auth. Both must be accepted.
     assert issue_route_secret_matches({"X-Nanodesk-Auth": secret}, secret) is True
     assert issue_route_secret_matches({"x-nanodesk-auth": secret}, secret) is True
-    assert issue_route_secret_matches({"X-Nanobot-Auth": secret}, secret) is True
+    assert issue_route_secret_matches({"X-Nanodesk-Auth": secret}, secret) is True
 
 
 def test_issue_route_secret_matches_rejects_wrong_or_missing_secret() -> None:

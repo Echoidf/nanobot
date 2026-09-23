@@ -3075,6 +3075,8 @@ function Shell({
                   onSave={saveAgentProfile}
                   modelPresets={settingsSnapshot?.model_presets ?? []}
                   skillCatalog={agentsPayload?.skill_catalog ?? []}
+                  sharedInstances={agentsPayload?.shared?.instances ?? []}
+                  sharedWarnings={agentsPayload?.shared?.warnings ?? []}
                 />
               </div>
             )}

@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.context import RequestContext, bind_request_context, reset_request_context
-from nanobot.agent.tools.exec_session import (
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.agent.tools.context import RequestContext, bind_request_context, reset_request_context
+from nanodesk.agent.tools.exec_session import (
     MAX_OUTPUT_CHARS,
     ExecSessionManager,
     ListExecSessionsTool,
@@ -23,8 +23,8 @@ from nanobot.agent.tools.exec_session import (
     _SessionPoll,
     _truncate_output,
 )
-from nanobot.agent.tools.registry import is_tool_error_result
-from nanobot.agent.tools.shell import ExecTool
+from nanodesk.agent.tools.registry import is_tool_error_result
+from nanodesk.agent.tools.shell import ExecTool
 
 
 def _python_command(code: str) -> str:

@@ -5,19 +5,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.context import (
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.agent.tools.context import (
     RequestContext,
     bind_request_context,
     current_request_context,
     reset_request_context,
 )
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import Config
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.session.turn_continuation import INTERNAL_CONTINUATION_META
+from nanodesk.agent.tools.registry import ToolRegistry
+from nanodesk.bus.events import InboundMessage
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import Config
+from nanodesk.providers.base import LLMResponse, ToolCallRequest
+from nanodesk.session.turn_continuation import INTERNAL_CONTINUATION_META
 
 
 class _ContextRecordingTool:

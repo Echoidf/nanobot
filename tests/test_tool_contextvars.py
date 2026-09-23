@@ -5,14 +5,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.tools.context import RequestContext, request_context
-from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.tools.message import MessageTool
-from nanobot.agent.tools.spawn import SpawnTool
-from nanobot.cron.service import CronService
-from nanobot.providers.base import GenerationSettings, LLMProvider
-from nanobot.session.keys import UNIFIED_SESSION_KEY
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.agent.tools.context import RequestContext, request_context
+from nanodesk.agent.tools.cron import CronTool
+from nanodesk.agent.tools.message import MessageTool
+from nanodesk.agent.tools.spawn import SpawnTool
+from nanodesk.cron.service import CronService
+from nanodesk.providers.base import GenerationSettings, LLMProvider
+from nanodesk.session.keys import UNIFIED_SESSION_KEY
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 def _runtime(model: str = "test-model") -> LLMRuntime:

@@ -15,6 +15,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useSessionAutomationJobs } from "@/hooks/useSessionAutomationJobs";
+import { useSessionOwner } from "@/hooks/useSessionOwner";
 import { currentLocale } from "@/i18n";
 import { fmtDateTime } from "@/lib/format";
 import type { SessionAutomationJob } from "@/lib/types";
@@ -40,6 +41,7 @@ export function SessionInfoPopover({ sessionKey, token, title }: SessionInfoPopo
   const { t } = useTranslation("common");
   const [open, setOpen] = useState(false);
   const { jobs, loading, loadFailed, now } = useSessionAutomationJobs(open, token, sessionKey);
+  const { status: ownerStatus, conflict: ownerConflict } = useSessionOwner(open, token, sessionKey);
   const automationContent = loading ? (
     <div className="flex items-center gap-2 rounded-floating bg-muted/45 px-3 py-3 text-[12.5px] text-muted-foreground">
       <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
@@ -93,6 +95,15 @@ export function SessionInfoPopover({ sessionKey, token, title }: SessionInfoPopo
           </div>
 
           <div className="h-px bg-border/45" />
+
+          {ownerConflict ? (
+            <div className="rounded-floating bg-amber-500/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800 dark:text-amber-200">
+              {t("thread.sessionInfo.ownerBusy", {
+                label: ownerStatus?.label || ownerStatus?.owner || "someone",
+                defaultValue: "{{label}} is editing this session. Your view is read-only until they leave.",
+              })}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">

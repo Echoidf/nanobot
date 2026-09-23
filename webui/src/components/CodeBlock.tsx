@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useState, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 
 import { useThemeValue } from "@/hooks/useTheme";
 import { hasAnsi, parseAnsiSegments, stripAnsi } from "@/lib/ansi";
@@ -27,6 +28,32 @@ interface HighlightedCodeProps {
   wrapLongLines: boolean;
 }
 
+type RendererArgs = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0];
+type SyntaxNode = RendererArgs["rows"][number];
+
+function stripConflictingTableClass(node: SyntaxNode): SyntaxNode {
+  const className = node.properties?.className;
+  const children = node.children?.map(stripConflictingTableClass);
+  const hasTableClass = Array.isArray(className) && className.includes("table");
+
+  if (!hasTableClass && !children) return node;
+
+  return {
+    ...node,
+    ...(hasTableClass
+      ? {
+          properties: {
+            ...node.properties,
+            // Tailwind's global `.table` utility changes Prism's inline Markdown
+            // table tokens into CSS tables, splitting a single source line vertically.
+            className: className.filter((name) => name !== "table"),
+          },
+        }
+      : {}),
+    ...(children ? { children } : {}),
+  };
+}
+
 const CODE_FONT_STACK = [
   '"JetBrains Mono"',
   '"SFMono-Regular"',
@@ -44,10 +71,12 @@ const ANSI_LANGUAGES = new Set(["ansi", "ansi-output"]);
 const LazyHighlightedCode = lazy(async () => {
   const [
     { default: SyntaxHighlighter },
+    { default: createSyntaxElement },
     { default: oneDark },
     { default: oneLight },
   ] = await Promise.all([
     import("react-syntax-highlighter/dist/esm/prism-async-light"),
+    import("react-syntax-highlighter/dist/esm/create-element"),
     import("react-syntax-highlighter/dist/esm/styles/prism/one-dark"),
     import("react-syntax-highlighter/dist/esm/styles/prism/one-light"),
   ]);
@@ -103,6 +132,27 @@ const LazyHighlightedCode = lazy(async () => {
           PreTag="pre"
           showLineNumbers={showLineNumbers}
           wrapLongLines={wrapLongLines}
+          // react-syntax-highlighter renders each numbered line as a flex
+          // container when `showLineNumbers + wrapLongLines` are both enabled
+          // (and passing a custom renderer turns line wrapping on in general).
+          // Flex items are blockified for copy/selection, so manually selecting
+          // part of a highlighted line pastes each token on its own line. Force
+          // block layout to keep tokens inline and preserve plain-text copying.
+          lineProps={
+            showLineNumbers
+              ? { style: { display: "block" } }
+              : undefined
+          }
+          renderer={({ rows, stylesheet, useInlineStyles }) =>
+            rows.map((row, index) =>
+              createSyntaxElement({
+                node: stripConflictingTableClass(row),
+                stylesheet,
+                useInlineStyles,
+                key: `code-segment-${index}`,
+              })
+            )
+          }
         >
           {code}
         </SyntaxHighlighter>
@@ -153,13 +203,18 @@ function CodeTextBlock({
     >
       <code className="text-inherit">
         {showLineNumbers ? (
+          // Each row is a block-level flex container so rows stack vertically
+          // and long lines scroll horizontally (min-w-max). The line break
+          // must NOT live inside the flex container: there it becomes an
+          // anonymous flex item, which wraps long table rows abnormally and
+          // breaks text selection/copy. Block stacking already separates
+          // rows visually and preserves newlines when copying.
           lines.map((line, index) => (
             <span key={index} className="flex min-w-max">
               <span className="w-10 shrink-0 select-none pr-4 text-right text-muted-foreground/60">
                 {index + 1}
               </span>
               <span className="whitespace-pre">{renderText(line || " ")}</span>
-              {index < lines.length - 1 ? "\n" : null}
             </span>
           ))
         ) : renderText(code)}

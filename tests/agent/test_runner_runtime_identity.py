@@ -2,15 +2,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunner, AgentRunSpec
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import (
+from nanodesk.agent.runner import AgentRunner, AgentRunSpec
+from nanodesk.config.schema import AgentDefaults
+from nanodesk.providers.base import (
     GenerationSettings,
     LLMProvider,
     LLMResponse,
     ToolCallRequest,
 )
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 @pytest.mark.asyncio

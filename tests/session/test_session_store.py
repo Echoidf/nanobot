@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock
 
-import nanobot.session as session_api
-from nanobot.session import Session, SessionManager
-from nanobot.session.manager import SessionStore
-from nanobot.session.model_selection import SESSION_MODEL_PRESET_METADATA_KEY
+import nanodesk.session as session_api
+from nanodesk.session import Session, SessionManager
+from nanodesk.session.manager import SessionStore
+from nanodesk.session.model_selection import SESSION_MODEL_PRESET_METADATA_KEY
 
 
 def test_store_types_are_not_public_session_api() -> None:

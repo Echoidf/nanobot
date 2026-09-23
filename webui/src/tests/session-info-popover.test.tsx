@@ -188,6 +188,8 @@ describe("SessionInfoPopover", () => {
     });
     const fetchMock = vi.fn(() => pendingRequest);
     vi.stubGlobal("fetch", fetchMock);
+    const automationCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes("/automations"));
     const user = userEvent.setup();
 
     render(
@@ -199,15 +201,50 @@ describe("SessionInfoPopover", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Session details" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(automationCalls().length).toBe(1));
 
     window.dispatchEvent(new Event("focus"));
     window.dispatchEvent(new Event("focus"));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(automationCalls().length).toBe(1);
     await act(async () => {
       resolveRequest(automationsResponse([]));
       await pendingRequest;
     });
+  });
+
+  it("shows a read-only notice when another owner holds the session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (String(url).includes("/owner")) {
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ "content-type": "application/json" }),
+            json: async () => ({
+              session: "websocket:chat-1",
+              owner: "someone-else",
+              label: "Teammate",
+              active: true,
+              stale: false,
+            }),
+          } as Response);
+        }
+        return Promise.resolve(automationsResponse([]));
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <SessionInfoPopover
+        sessionKey="websocket:chat-1"
+        token="tok"
+        title="Release work"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Session details" }));
+
+    expect(await screen.findByText(/is editing this session/)).toBeInTheDocument();
   });
 });

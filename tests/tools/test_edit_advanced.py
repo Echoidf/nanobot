@@ -12,8 +12,8 @@ import os
 
 import pytest
 
-from nanobot.agent.tools import file_state
-from nanobot.agent.tools.filesystem import EditFileTool, ReadFileTool
+from nanodesk.agent.tools import file_state
+from nanodesk.agent.tools.filesystem import EditFileTool, ReadFileTool
 
 
 @pytest.fixture(autouse=True)

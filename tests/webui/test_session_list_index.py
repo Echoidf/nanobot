@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 
-import nanobot.webui.session_list_index as session_list_index
-from nanobot.cron.session_turns import CRON_HISTORY_META
-from nanobot.providers.base import ProviderConversationState
-from nanobot.security.workspace_access import WORKSPACE_SCOPE_METADATA_KEY
-from nanobot.session.automation_turns import AUTOMATION_HISTORY_META
-from nanobot.session.history_visibility import HIDDEN_HISTORY_META
-from nanobot.session.manager import SessionManager
-from nanobot.session.model_selection import SESSION_MODEL_PRESET_METADATA_KEY
+import nanodesk.webui.session_list_index as session_list_index
+from nanodesk.cron.session_turns import CRON_HISTORY_META
+from nanodesk.providers.base import ProviderConversationState
+from nanodesk.security.workspace_access import WORKSPACE_SCOPE_METADATA_KEY
+from nanodesk.session.automation_turns import AUTOMATION_HISTORY_META
+from nanodesk.session.history_visibility import HIDDEN_HISTORY_META
+from nanodesk.session.manager import SessionManager
+from nanodesk.session.model_selection import SESSION_MODEL_PRESET_METADATA_KEY
 
 
 @pytest.fixture(autouse=True)

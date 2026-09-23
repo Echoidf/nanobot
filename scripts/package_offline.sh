@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ============================================================
-# Build an offline install bundle for nanobot on air-gapped Linux boxes.
+# Build an offline install bundle for nanodesk on air-gapped Linux boxes.
 #
-# Produces:  <out>/nanobot-offline-<TAG>-<arch>-<pytag>.tar.gz
-#   nanobot-offline-<TAG>/
+# Produces:  <out>/nanodesk-offline-<TAG>-<arch>-<pytag>.tar.gz
+#   nanodesk-offline-<TAG>/
 #   ├── install.sh               # runs on the offline server
 #   ├── requirements-linux.txt   # fully pinned dependency set
 #   ├── wheelhouse/              # every dependency wheel (linux target)
-#   └── dist/nanobot_ai-*.whl    # nanobot itself (WebUI bundled inside)
+#   └── dist/nanodesk_ai-*.whl    # nanodesk itself (WebUI bundled inside)
 #
-# The WebUI is bundled into the nanobot wheel by hatch_build.py, so no Node
+# The WebUI is bundled into the nanodesk wheel by hatch_build.py, so no Node
 # runtime is shipped.
 #
 # Examples:
@@ -20,8 +20,8 @@
 #   scripts/package_offline.sh --old-glibc          # CentOS/RHEL 7 (glibc 2.17) box
 #   scripts/package_offline.sh --no-cache           # disable wheel caching
 #   scripts/package_offline.sh --cache-dir /path/to/cache  # custom cache directory
-#   NANOBOT_OFFLINE_INDEX_URL=https://pypi.org/simple scripts/package_offline.sh
-#   NANOBOT_OFFLINE_CACHE=/path/to/cache scripts/package_offline.sh
+#   NANODESK_OFFLINE_INDEX_URL=https://pypi.org/simple scripts/package_offline.sh
+#   NANODESK_OFFLINE_CACHE=/path/to/cache scripts/package_offline.sh
 # ============================================================
 set -euo pipefail
 
@@ -31,13 +31,13 @@ ARCH="x86_64"          # x86_64 | aarch64
 PYVER="3.12"           # target interpreter version
 EXTRAS="api"           # comma-separated optional-dependencies; "none" for core only
 TAG=""                 # bundle label; default = project version
-OUT_DIR="${NANOBOT_OFFLINE_OUT:-$HOME/Downloads}"
+OUT_DIR="${NANODESK_OFFLINE_OUT:-$HOME/Downloads}"
 CONSTRAINTS=""         # optional pip constraint file (version downgrades)
-INDEX_URL="${NANOBOT_OFFLINE_INDEX_URL:-}"  # pip index override; default = pip's own config
+INDEX_URL="${NANODESK_OFFLINE_INDEX_URL:-}"  # pip index override; default = pip's own config
 OLD_GLIBC=1         # refuse wheels needing glibc > 2.17 (CentOS/RHEL 7 era)
 SDIST_FALLBACK=0       # allow sdists for deps without linux wheels
 SKIP_WHEEL=0           # reuse an existing dist/*.whl instead of rebuilding
-WHEEL_CACHE="${NANOBOT_OFFLINE_CACHE:-$HOME/.cache/nanobot-offline/wheels}"
+WHEEL_CACHE="${NANODESK_OFFLINE_CACHE:-$HOME/.cache/nanodesk-offline/wheels}"
 USE_CACHE=1            # use wheel cache (1=enable, 0=disable)
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -144,22 +144,22 @@ fi
 cd "$REPO_ROOT"
 [[ -n "$TAG" ]] || TAG="v$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -1)"
 
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/nanobot-offline-${TAG}-XXXXXX")"
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/nanodesk-offline-${TAG}-XXXXXX")"
 trap 'chmod -R u+rwX "$STAGE" 2>/dev/null || true' EXIT
-PKG_DIR="$STAGE/nanobot-offline-${TAG}"
+PKG_DIR="$STAGE/nanodesk-offline-${TAG}"
 mkdir -p "$PKG_DIR/wheelhouse" "$PKG_DIR/dist" "$OUT_DIR"
 
 log "Config: arch=$ARCH python=$PYVER ($PYTAG) extras=${EXTRAS:-none} tag=$TAG"
 log "Index: ${INDEX_URL:-default (https://pypi.org/simple)}"
 log "Staging in $STAGE"
 
-# ---------- 1. nanobot wheel (WebUI bundled by hatch_build.py) ----------
+# ---------- 1. nanodesk wheel (WebUI bundled by hatch_build.py) ----------
 if [[ "$SKIP_WHEEL" -eq 0 ]]; then
-  log "Building nanobot wheel"
+  log "Building nanodesk wheel"
   (cd "$REPO_ROOT" && uv build --wheel --out-dir "$PKG_DIR/dist")
 else
   log "Reusing existing wheel from dist/"
-  cp dist/nanobot_ai-*.whl "$PKG_DIR/dist/"
+  cp dist/nanodesk_ai-*.whl "$PKG_DIR/dist/"
 fi
 ls -1 "$PKG_DIR/dist"/*.whl >/dev/null 2>&1 || die "no wheel produced"
 
@@ -348,7 +348,7 @@ chmod -R u+rwX "$STAGE" 2>/dev/null || true
 cat > "$PKG_DIR/install.sh" <<'INSTALLER'
 #!/usr/bin/env bash
 # ============================================================
-# nanobot offline installer (Linux, pre-downloaded wheelhouse)
+# nanodesk offline installer (Linux, pre-downloaded wheelhouse)
 #
 # Usage:
 #   bash install.sh /path/to/python3.12
@@ -370,7 +370,7 @@ fi
 echo "✅ python: $PY"
 "$PY" --version || { echo "❌ cannot run $PY"; exit 1; }
 "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
-  || { echo "❌ nanobot needs Python 3.11+; wheels here are built for this interpreter"; exit 1; }
+  || { echo "❌ nanodesk needs Python 3.11+; wheels here are built for this interpreter"; exit 1; }
 
 if ! "$PY" -m pip --version >/dev/null 2>&1; then
   echo "🔧 no pip in that interpreter, bootstrapping with ensurepip..."
@@ -432,21 +432,21 @@ echo "📦 installing dependencies (--no-index, from wheelhouse/)..."
        echo "   check: python version, uname -m, ldd --version (this bundle targets $TARGET_GLIBC, floor $FLOOR)"; \
        exit 1; }
 
-echo "🚀 installing nanobot..."
+echo "🚀 installing nanodesk..."
 "$PIP" install --no-index --find-links="$(pwd)/wheelhouse" \
-  --upgrade dist/nanobot_ai-*.whl || exit 1
+  --upgrade dist/nanodesk_ai-*.whl || exit 1
 
 if [[ -n "$VENV" ]]; then
-  CMD="$VENV/bin/nanobot"
+  CMD="$VENV/bin/nanodesk"
 else
-  CMD="$PY -m nanobot"
+  CMD="$PY -m nanodesk"
 fi
 
 echo ""
 echo "🔎 verifying import..."
 VERIFY_PY="${VENV:+$VENV/bin/python}"
 [[ -n "$VERIFY_PY" ]] || VERIFY_PY="$PY"
-"$VERIFY_PY" -c 'import nanobot; print("   nanobot", nanobot.__version__)' \
+"$VERIFY_PY" -c 'import nanodesk; print("   nanodesk", nanodesk.__version__)' \
   || echo "⚠️  import check failed (non-fatal)"
 
 echo ""
@@ -454,19 +454,19 @@ echo "======================================================"
 echo "✅ done"
 echo "  gateway (WebUI):  $CMD gateway"
 echo "  first-time setup: $CMD onboard"
-echo "  config:           ~/.nanobot/config.json"
+echo "  config:           ~/.nanodesk/config.json"
 echo "======================================================"
 INSTALLER
 chmod +x "$PKG_DIR/install.sh"
 
-TARBALL="$OUT_DIR/nanobot-offline-${TAG}-${ARCH}-${PYTAG}.tar.gz"
+TARBALL="$OUT_DIR/nanodesk-offline-${TAG}-${ARCH}-${PYTAG}.tar.gz"
 log "Packing $TARBALL"
-tar -czf "$TARBALL" -C "$STAGE" "nanobot-offline-${TAG}"
+tar -czf "$TARBALL" -C "$STAGE" "nanodesk-offline-${TAG}"
 
 log "Done"
 echo "  file:  $TARBALL ($(du -h "$TARBALL" | awk '{print $1}'))"
 echo "  wheels: $(tar tzf "$TARBALL" | grep -c '\.whl$')"
 echo ""
 echo "  on the offline box:"
-echo "    tar xzf $(basename "$TARBALL") && cd nanobot-offline-${TAG}"
+echo "    tar xzf $(basename "$TARBALL") && cd nanodesk-offline-${TAG}"
 echo "    bash install.sh /path/to/python3.12"

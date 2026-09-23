@@ -1,11 +1,11 @@
 # 金融研发 AI 工作台方向
-> **摘要**: 基于 nanobot 探索面向金融研发团队的可审计 AI 同事工作台，首个试点聚焦证据驱动的缺陷排查。
+> **摘要**: 基于 nanodesk 探索面向金融研发团队的可审计 AI 同事工作台，首个试点聚焦证据驱动的缺陷排查。
 > **创建日期**: 2026-07-25
 > **最后更新**: 2026-08-30
 
 ## 1. 当前判断
 
-建议将 nanobot 作为 Agent Runtime 基座，逐步封装面向研发流程的 AI 同事。产品不应先做一个通用的“多智能体平台”，而应先完成一个真实、可复盘、可衡量的研发闭环，再决定是否扩展更多 Agent。
+建议将 nanodesk 作为 Agent Runtime 基座，逐步封装面向研发流程的 AI 同事。产品不应先做一个通用的“多智能体平台”，而应先完成一个真实、可复盘、可衡量的研发闭环，再决定是否扩展更多 Agent。
 
 推荐定位：
 
@@ -129,7 +129,7 @@ WebUI 不应只是聊天页面，首版应作为本地或内网的任务控制�
 
 ## 8. 现有基础和待补能力
 
-nanobot 已有 `spawn`、持续目标、Skills、CLI Apps、工具插件、MCP、Provider、workspace scope、沙箱和 WebUI runtime events，可作为实现基础。核心 Agent Loop 和 Runner 应保持小幅改动，领域能力优先放在工具、Skill、适配器和 WebUI 层。
+nanodesk 已有 `spawn`、持续目标、Skills、CLI Apps、工具插件、MCP、Provider、workspace scope、沙箱和 WebUI runtime events，可作为实现基础。核心 Agent Loop 和 Runner 应保持小幅改动，领域能力优先放在工具、Skill、适配器和 WebUI 层。
 
 要形成工作台闭环，还需要补充：
 

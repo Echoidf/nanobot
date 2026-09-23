@@ -3,23 +3,24 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.goal_permission import goal_mutation_allowed
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.command.builtin import (
+from nanodesk.agent.goal_permission import goal_mutation_allowed
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.bus.events import InboundMessage
+from nanodesk.bus.queue import MessageBus
+from nanodesk.command.builtin import (
     build_help_text,
     builtin_command_palette,
     cmd_goal,
     cmd_model,
     register_builtin_commands,
 )
-from nanobot.command.router import CommandContext, CommandRouter
-from nanobot.config.schema import ModelPresetConfig
-from nanobot.session.model_selection import (
+from nanodesk.command.router import CommandContext, CommandRouter
+from nanodesk.config.schema import ModelPresetConfig
+from nanodesk.session.model_selection import (
     SESSION_MODEL_PRESET_METADATA_KEY,
     model_preset_from_metadata,
     model_selection_mode_from_metadata,
+    reasoning_effort_from_metadata,
 )
 
 
@@ -212,6 +213,7 @@ async def test_model_command_registered_as_exact_and_prefix(tmp_path) -> None:
         "- Model: `openai/gpt-4.1`",
         "- Context window: 32768",
         "- Max output tokens: 4096",
+        "- Reasoning effort: `default`",
     ])
     assert _saved_model_preset(loop) == "fast"
 
@@ -253,10 +255,118 @@ def test_model_command_in_help_and_palette() -> None:
     palette = builtin_command_palette()
 
     model = next(item for item in palette if item["command"] == "/model")
-    assert model["arg_hint"] == "[preset]"
+    assert model["arg_hint"] == "[preset] [--effort value]"
     assert model["lifecycle"] == "side_channel"
     assert model["accepts_args"] is True
     assert "/model [preset]" in build_help_text()
+
+
+@pytest.mark.asyncio
+async def test_model_command_sets_session_reasoning_effort(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+    await cmd_model(_ctx(loop, "/model fast", args="fast"))
+
+    out = await cmd_model(_ctx(loop, "/model --effort high", args="--effort high"))
+
+    assert "Set session reasoning effort to `high`." in out.content
+    assert "Scope: current session" in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) == "high"
+    assert loop.runtime_for_session(session).generation.reasoning_effort == "high"
+
+
+@pytest.mark.asyncio
+async def test_model_command_effort_only_requires_manual_preset(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+
+    out = await cmd_model(_ctx(loop, "/model --effort high", args="--effort high"))
+
+    assert "manual preset first" in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) is None
+
+
+@pytest.mark.asyncio
+async def test_model_command_switches_preset_with_effort(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+
+    out = await cmd_model(
+        _ctx(loop, "/model fast --effort high", args="fast --effort high")
+    )
+
+    assert "Switched to manual model preset `fast`." in out.content
+    assert "Reasoning effort: `high`" in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) == "high"
+
+
+@pytest.mark.asyncio
+async def test_model_command_supports_preset_names_with_spaces_and_effort(
+    tmp_path,
+) -> None:
+    loop = _make_loop(
+        tmp_path,
+        model_presets={
+            "default": ModelPresetConfig(model="base-model"),
+            "Deep Research": ModelPresetConfig(model="deep-model"),
+        },
+    )
+
+    out = await cmd_model(
+        _ctx(
+            loop,
+            "/model Deep Research --effort high",
+            args="Deep Research --effort high",
+        )
+    )
+
+    assert "Switched to manual model preset `Deep Research`." in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) == "high"
+
+
+@pytest.mark.asyncio
+async def test_model_command_clears_effort_when_switching_preset(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+    await cmd_model(
+        _ctx(loop, "/model fast --effort high", args="fast --effort high")
+    )
+
+    await cmd_model(_ctx(loop, "/model fast", args="fast"))
+
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) is None
+    assert loop.runtime_for_session(session).generation.reasoning_effort is None
+
+
+@pytest.mark.asyncio
+async def test_model_command_rejects_invalid_effort(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+    await cmd_model(_ctx(loop, "/model fast", args="fast"))
+
+    out = await cmd_model(
+        _ctx(loop, "/model --effort " + "x" * 65, args="--effort " + "x" * 65)
+    )
+
+    assert "Could not set reasoning effort" in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) is None
+
+
+@pytest.mark.asyncio
+async def test_model_command_clears_effort_with_default(tmp_path) -> None:
+    loop = _make_loop(tmp_path)
+    await cmd_model(
+        _ctx(loop, "/model fast --effort high", args="fast --effort high")
+    )
+
+    out = await cmd_model(
+        _ctx(loop, "/model --effort default", args="--effort default")
+    )
+
+    assert "Cleared session reasoning effort override" in out.content
+    session = loop.sessions.get_or_create("cli:direct")
+    assert reasoning_effort_from_metadata(session.metadata) is None
 
 
 @pytest.mark.asyncio

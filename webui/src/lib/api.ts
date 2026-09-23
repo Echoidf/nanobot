@@ -29,8 +29,11 @@ import type {
   SessionDeleteResult,
   SessionHandle,
   SessionAutomationsPayload,
+  SessionOwnerStatus,
   SettingsPayload,
   SettingsUpdate,
+  SharedInstancePayload,
+  SharedInstancesPayload,
   SidebarStatePayload,
   SkillDetail,
   SkillActionPayload,
@@ -197,6 +200,7 @@ export async function listSessions(
     preview?: string;
     model_preset?: string | null;
     model_selection_mode?: "auto" | "manual";
+    reasoning_effort?: string | null;
     run_started_at?: number | null;
     workspace_scope?: WorkspaceScopePayload | null;
     agent_id?: string | null;
@@ -220,6 +224,7 @@ export async function listSessions(
       modelPreset: s.model_preset ?? null,
       modelSelectionMode: s.model_selection_mode
         ?? (s.model_preset ? "manual" : "auto"),
+      reasoningEffort: s.reasoning_effort ?? null,
       runStartedAt: s.run_started_at ?? null,
       workspaceScope: s.workspace_scope ?? null,
       agentId: s.agent_id ?? null,
@@ -570,6 +575,47 @@ export async function fetchAgents(
     API_READ_TIMEOUT_MS,
   );
 }
+
+export async function fetchSharedInstances(
+  token: string,
+  base: string = "",
+): Promise<SharedInstancesPayload> {
+  const payload = await request<{ instances: SharedInstancePayload[]; warnings: string[] }>(
+    `${base}/api/webui/shared`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  return payload;
+}
+
+async function sessionOwnerRequest(
+  token: string,
+  sessionKey: string,
+  action: "" | "claim" | "heartbeat" | "release",
+  params: Record<string, string>,
+  base: string = "",
+): Promise<SessionOwnerStatus> {
+  const query = new URLSearchParams(params).toString();
+  const suffix = action ? `/owner/${action}` : "/owner";
+  return request<SessionOwnerStatus>(
+    `${base}/api/sessions/${encodeURIComponent(sessionKey)}${suffix}${query ? `?${query}` : ""}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export const sessionOwnerApi = {
+  status: (token: string, sessionKey: string, base = "") =>
+    sessionOwnerRequest(token, sessionKey, "", {}, base),
+  claim: (token: string, sessionKey: string, owner: string, label?: string, base = "") =>
+    sessionOwnerRequest(token, sessionKey, "claim", label ? { owner, label } : { owner }, base),
+  heartbeat: (token: string, sessionKey: string, owner: string, base = "") =>
+    sessionOwnerRequest(token, sessionKey, "heartbeat", { owner }, base),
+  release: (token: string, sessionKey: string, owner: string, base = "") =>
+    sessionOwnerRequest(token, sessionKey, "release", { owner }, base),
+};
 
 export type AgentProfileUpdate = {
   id: string;

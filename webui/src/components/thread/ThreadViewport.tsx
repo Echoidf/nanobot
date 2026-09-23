@@ -58,6 +58,7 @@ interface ThreadViewportProps {
   onOpenFilePreview?: (path: string) => void;
   onForkFromMessage?: (beforeUserIndex: number) => void;
   onQuoteSelection?: (text: string) => void;
+  onCardOptionSelect?: (value: string) => void;
 }
 
 const NEAR_BOTTOM_PX = 48;
@@ -193,6 +194,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
   onOpenFilePreview,
   onForkFromMessage,
   onQuoteSelection,
+  onCardOptionSelect,
 }, ref) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -766,6 +768,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
                   onOpenFilePreview={onOpenFilePreview}
                   onForkFromMessage={onForkFromMessage}
                   onQuoteSelection={onQuoteSelection}
+                  onCardOptionSelect={onCardOptionSelect}
                 />
               </div>
               <div ref={bottomRef} aria-hidden className="h-px shrink-0" />

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from nanobot.config.schema import Config
-from nanobot.webui.settings_system import (
+from nanodesk.config.schema import Config
+from nanodesk.webui.settings_system import (
     coerce_channel_value,
     runtime_tools_payload,
     system_settings_payload,

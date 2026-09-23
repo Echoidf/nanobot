@@ -1,7 +1,7 @@
 import json
 
-from nanobot.utils import helpers
-from nanobot.utils.helpers import (
+from nanodesk.utils import helpers
+from nanodesk.utils.helpers import (
     estimate_message_tokens,
     estimate_prompt_tokens,
     estimate_prompt_tokens_chain,

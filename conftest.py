@@ -14,13 +14,13 @@ from loguru import logger
 
 
 @pytest.fixture(autouse=True)
-def _isolate_nanobot_log_activation() -> Iterator[None]:
+def _isolate_nanodesk_log_activation() -> Iterator[None]:
     """Keep CLI log settings from leaking into later tests in the same process."""
-    logger.enable("nanobot")
+    logger.enable("nanodesk")
     try:
         yield
     finally:
-        logger.enable("nanobot")
+        logger.enable("nanodesk")
 
 
 @pytest.fixture(autouse=True)
@@ -39,11 +39,11 @@ def _isolate_sessions_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> I
         return path
 
     monkeypatch.setattr(
-        "nanobot.session.manager.get_runtime_subdir",
+        "nanodesk.session.manager.get_runtime_subdir",
         runtime_subdir,
     )
     monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
+        "nanodesk.session.manager.get_legacy_sessions_dir",
         lambda: legacy_root,
     )
     yield

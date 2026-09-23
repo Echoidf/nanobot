@@ -30,6 +30,10 @@ vi.mock("react-syntax-highlighter/dist/esm/prism-async-light", () => ({
   ),
 }));
 
+vi.mock("react-syntax-highlighter/dist/esm/create-element", () => ({
+  default: () => null,
+}));
+
 vi.mock("react-syntax-highlighter/dist/esm/styles/prism/one-dark", () => ({
   default: mockedStyles.dark,
 }));

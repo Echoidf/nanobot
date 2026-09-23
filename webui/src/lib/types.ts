@@ -1,5 +1,7 @@
 export type Role = "user" | "assistant" | "tool" | "system";
 
+import type { CardOptionsData } from "@/lib/card-options";
+
 /** "trace" rows are intermediate agent breadcrumbs (tool-call hints,
  * progress pings) that should not be rendered as conversational replies. */
 export type MessageKind = "message" | "trace";
@@ -91,6 +93,17 @@ export interface UIMessage {
   deliveryStatus?: MessageDeliveryStatus;
   /** Structured rejection reason shown with a failed optimistic message. */
   deliveryErrorKind?: MessageDeliveryErrorKind;
+  /** Assistant turn: normalized card-option group to render below the text.
+   * Filled from an ``agent_ui`` structured frame or hoisted out of a
+   * ```` ```cards ```` fence by the thread projection. */
+  cardOptions?: CardOptionsData;
+  /** Derived by the thread projection when a user turn followed this card
+   * group: epoch ms of that answer. Presence locks the group to a read-only,
+   * already-answered state so it cannot be submitted twice. */
+  cardOptionsResolvedAt?: number;
+  /** Derived next to ``cardOptionsResolvedAt``: the option ids matched from
+   * the answering turn, so a replayed group re-checks the chosen cards. */
+  cardOptionsSelectedIds?: string[];
 }
 
 export interface UICliAppAttachment {
@@ -391,6 +404,29 @@ export interface AgentsPayload {
   agents: AgentProfilePayload[];
   skill_catalog: AgentSkillPayload[];
   tool_catalog: AgentToolPayload[];
+  shared?: SharedInstancesPayload;
+}
+
+export interface SharedInstancePayload {
+  id: string;
+  name: string;
+  description: string;
+  baseUrl: string;
+  hasBaseUrl: boolean;
+  inherit: { skills: string[]; mcp: string[]; agents: string[] };
+}
+
+export interface SharedInstancesPayload {
+  instances: SharedInstancePayload[];
+  warnings: string[];
+}
+
+export interface SessionOwnerStatus {
+  session: string;
+  owner: string | null;
+  label?: string | null;
+  active: boolean;
+  stale: boolean;
 }
 
 export interface ChatSummary {
@@ -407,6 +443,8 @@ export interface ChatSummary {
   modelPreset?: string | null;
   /** Session model routing mode; legacy rows with a preset are treated as manual. */
   modelSelectionMode?: "auto" | "manual";
+  /** Session-scoped reasoning-effort override; null follows the preset default. */
+  reasoningEffort?: string | null;
   /** Unix epoch seconds when this session currently has a turn in flight. */
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;

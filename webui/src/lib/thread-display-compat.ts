@@ -1,7 +1,33 @@
+import { extractCardOptionsFromText, resolveCardChoices } from "@/lib/card-options";
 import { isModelCommandResponseText, isModelCommandText } from "@/lib/format";
 import { isSystemCommandTurnId } from "@/lib/nanodesk-client";
 import { scrubSubagentUiMessages } from "@/lib/subagent-channel-display";
 import type { UIMessage } from "@/lib/types";
+
+const CARD_FENCE_START = /(?:^|\n)```[ \t]*cards/;
+
+/**
+ * Hoist ```` ```cards ```` fences out of assistant markdown into
+ * ``message.cardOptions`` and drop the raw JSON from the rendered text.
+ *
+ * Structured ``agent_ui`` frames already land in ``cardOptions``, so only
+ * messages that still carry a fence are touched. Fences that do not parse are
+ * left alone and stay visible as ordinary code blocks.
+ */
+function hoistCardOptionMessages(messages: UIMessage[]): UIMessage[] {
+  let next: UIMessage[] | null = null;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role !== "assistant" || message.kind === "trace") continue;
+    if (message.cardOptions) continue;
+    if (!CARD_FENCE_START.test(message.content)) continue;
+    const { data, content } = extractCardOptionsFromText(message.content);
+    if (!data) continue;
+    next ??= [...messages];
+    next[index] = { ...message, cardOptions: data, content };
+  }
+  return next ?? messages;
+}
 
 /**
  * Older WebUI disk snapshots and historical sessions may still contain
@@ -75,5 +101,7 @@ export function projectWebuiThreadMessages(messages: UIMessage[]): UIMessage[] {
     && !(message.role === "user" && isModelCommandText(message.content))
     && !(message.role === "assistant" && isModelCommandResponseText(message.content))
   ));
-  return deriveAssistantCompletionTimes(visible);
+  // Card grouping and answering run on the visible list only: a hidden system
+  // turn must never count as an answer to a card group.
+  return resolveCardChoices(deriveAssistantCompletionTimes(hoistCardOptionMessages(visible)));
 }

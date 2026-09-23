@@ -598,6 +598,84 @@ describe("ThreadComposer", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
+  it("shows session thinking effort options for a manual preset", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        modelLabel="kimi"
+        modelPreset="kimi"
+        modelProvider="moonshot"
+        modelPresets={MODEL_PRESETS}
+        onModelPresetChange={vi.fn()}
+        activeReasoningEffort={null}
+        presetReasoningEffort="medium"
+        reasoningEffortOptions={["", "low", "medium", "high"]}
+        onReasoningEffortChange={vi.fn()}
+        placeholder="Type your message..."
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Choose model" }));
+
+    expect(screen.getByText("思考强度")).toBeInTheDocument();
+    expect(screen.getByText("仅本会话生效")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /默认 · medium/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "high" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("hides thinking effort options in auto mode", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        modelLabel="Auto"
+        modelPreset="auto"
+        modelPresets={MODEL_PRESETS}
+        onModelPresetChange={vi.fn()}
+        activeReasoningEffort={null}
+        reasoningEffortOptions={["", "low", "high"]}
+        onReasoningEffortChange={vi.fn()}
+        placeholder="Type your message..."
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Choose model" }));
+
+    expect(screen.queryByText("思考强度")).not.toBeInTheDocument();
+  });
+
+  it("switches session thinking effort by clicking an option", async () => {
+    const user = userEvent.setup();
+    const onReasoningEffortChange = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        modelLabel="kimi"
+        modelPreset="kimi"
+        modelProvider="moonshot"
+        modelPresets={MODEL_PRESETS}
+        onModelPresetChange={vi.fn()}
+        activeReasoningEffort="low"
+        presetReasoningEffort={null}
+        reasoningEffortOptions={["", "low", "high"]}
+        onReasoningEffortChange={onReasoningEffortChange}
+        placeholder="Type your message..."
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Choose model" }));
+    await user.click(screen.getByRole("button", { name: "high" }));
+
+    await waitFor(() => expect(onReasoningEffortChange).toHaveBeenCalledWith("high"));
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+  });
+
   it("transcribes voice input into the composer without sending", async () => {
     mockVoiceRecorder();
     const onSend = vi.fn();
@@ -1778,7 +1856,7 @@ describe("ThreadComposer", () => {
 
   it("keeps the gateway file ordering instead of re-sorting hidden folders to the top", async () => {
     // The gateway already ranks folders first and demotes tool noise such as
-    // .nanobot to the end. Re-sorting by name here would undo that and put a
+    // .nanodesk to the end. Re-sorting by name here would undo that and put a
     // hidden folder back in the first slot.
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -1794,7 +1872,7 @@ describe("ThreadComposer", () => {
           { name: "docs", path: "docs", kind: "folder" },
           { name: "src", path: "src", kind: "folder" },
           { name: "AGENTS.md", path: "AGENTS.md", kind: "file" },
-          { name: ".nanobot", path: ".nanobot", kind: "folder" },
+          { name: ".nanodesk", path: ".nanodesk", kind: "folder" },
           { name: ".claude", path: ".claude", kind: "folder" },
         ],
       }),
@@ -1828,7 +1906,7 @@ describe("ThreadComposer", () => {
       const paths = options.map(
         (option) => (option.getAttribute("aria-label") ?? "").match(/@(\S+)\s/)?.[1],
       );
-      expect(paths).toEqual(["docs", "src", "AGENTS.md", ".nanobot", ".claude"]);
+      expect(paths).toEqual(["docs", "src", "AGENTS.md", ".nanodesk", ".claude"]);
       expect(options[0]).toHaveAttribute("aria-selected", "true");
     } finally {
       vi.unstubAllGlobals();

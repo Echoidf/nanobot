@@ -7,90 +7,68 @@ from pathlib import Path
 
 import pytest
 
-import nanobot.channels._setup as channel_setup_module
-import nanobot.channels.registry as registry_module
-from nanobot.channels._setup import channel_setup_spec
-from nanobot.channels.plugin import ChannelPlugin, load_channel_package
-from nanobot.channels.registry import channel_default_enabled, discover_plugins
+import nanodesk.channels._setup as channel_setup_module
+import nanodesk.channels.registry as registry_module
+from nanodesk.channels._setup import channel_setup_spec
+from nanodesk.channels.plugin import ChannelPlugin, load_channel_package
+from nanodesk.channels.registry import channel_default_enabled, discover_plugins
 
 EXPECTED_CHANNELS = {
-    "dingtalk",
-    "discord",
-    "email",
     "feishu",
-    "matrix",
-    "mattermost",
-    "mochat",
-    "msteams",
-    "napcat",
     "qq",
-    "signal",
-    "slack",
-    "telegram",
     "websocket",
     "wecom",
     "weixin",
-    "whatsapp",
 }
 
 
 def test_channel_setup_spec_derives_route_and_secret_metadata() -> None:
-    slack = channel_setup_spec("slack")
+    qq = channel_setup_spec("qq")
 
-    assert slack is not None
-    assert slack.secrets == {"appToken", "botToken"}
-    assert slack.route_field_types == {
-        "appToken": "secret",
-        "botToken": "secret",
-        "groupPolicy": ("enum", {"mention", "open", "allowlist"}),
+    assert qq is not None
+    assert qq.secrets == {"secret"}
+    assert qq.route_field_types == {
+        "appId": "string",
+        "secret": "secret",
+        "allowFrom": "list",
+        "msgFormat": ("enum", {"markdown", "plain"}),
     }
-    assert slack.simple_required_fields == ("appToken", "botToken")
-    assert slack.fields["groupPolicy"].default == "mention"
-    group_policy = next(
+    assert qq.simple_required_fields == ("appId", "secret")
+    assert qq.fields["msgFormat"].default == "plain"
+    msg_format = next(
         field
-        for field in slack.to_public_dict("slack")["fields"]
-        if field["field"] == "groupPolicy"
+        for field in qq.to_public_dict("qq")["fields"]
+        if field["field"] == "msgFormat"
     )
-    assert group_policy["default_value"] == "mention"
-
-
-def test_matrix_setup_requires_one_complete_login_method() -> None:
-    matrix = channel_setup_spec("matrix")
-
-    assert matrix is not None
-    base = {
-        "homeserver": "https://matrix.example",
-        "userId": "@nanobot:matrix.example",
-    }
-    assert matrix.is_configured(base | {"password": "secret"})
-    assert matrix.is_configured(base | {"accessToken": "token", "deviceId": "DEVICE"})
-    assert not matrix.is_configured(base | {"accessToken": "token"})
+    assert msg_format["default_value"] == "plain"
 
 
 def test_channel_setup_spec_separates_writable_and_snapshot_fields() -> None:
-    matrix = channel_setup_spec("matrix")
-    discord = channel_setup_spec("discord")
+    feishu = channel_setup_spec("feishu")
+    qq = channel_setup_spec("qq")
 
-    assert matrix is not None
-    assert discord is not None
-    assert "allowFrom" not in matrix.route_field_types
-    assert "allowFrom" in matrix.snapshot_fields
-    assert "allowFrom" in discord.route_field_types
-    assert "allowFrom" not in discord.snapshot_fields
+    assert feishu is not None
+    assert qq is not None
+    assert "allowFrom" in feishu.route_field_types
+    assert "allowFrom" not in feishu.snapshot_fields
+    assert "allowFrom" in qq.route_field_types
+    assert "allowFrom" in qq.snapshot_fields
 
 
-def test_webui_forms_have_writable_mattermost_and_whatsapp_contracts() -> None:
-    mattermost = channel_setup_spec("mattermost")
-    whatsapp = channel_setup_spec("whatsapp")
+def test_webui_forms_have_writable_qq_and_wecom_contracts() -> None:
+    qq = channel_setup_spec("qq")
+    wecom = channel_setup_spec("wecom")
 
-    assert mattermost is not None
-    assert whatsapp is not None
-    assert mattermost.route_field_types["serverUrl"] == "string"
-    assert mattermost.route_field_types["token"] == "secret"
-    assert whatsapp.route_field_types["allowFrom"] == "list"
-    assert whatsapp.route_field_types["groupPolicy"] == (
+    assert qq is not None
+    assert wecom is not None
+    assert qq.route_field_types["appId"] == "string"
+    assert qq.route_field_types["secret"] == "secret"
+    assert wecom.route_field_types["botId"] == "string"
+    assert wecom.route_field_types["secret"] == "secret"
+    assert qq.route_field_types["allowFrom"] == "list"
+    assert qq.route_field_types["msgFormat"] == (
         "enum",
-        {"mention", "open"},
+        {"markdown", "plain"},
     )
 
 
@@ -111,7 +89,7 @@ def test_every_channel_is_a_self_contained_package() -> None:
         plugin = load_channel_package(name)
         assert plugin is not None
         assert plugin.name == name
-        assert plugin.runtime.startswith(f"nanobot.channels.{name}.runtime:")
+        assert plugin.runtime.startswith(f"nanodesk.channels.{name}.runtime:")
         assert plugin.setup is channel_setup_spec(name)
         if plugin.webui is not None:
             assert (package_dir / plugin.webui).is_file()
@@ -141,9 +119,9 @@ def test_channel_locales_cover_authoritative_setup_contracts() -> None:
 def test_channel_manifests_only_import_contract_modules() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     allowed_imports = {
-        "nanobot.channels._manifest",
-        "nanobot.channels.contracts",
-        "nanobot.channels.plugin",
+        "nanodesk.channels._manifest",
+        "nanodesk.channels.contracts",
+        "nanodesk.channels.plugin",
     }
 
     for name in EXPECTED_CHANNELS:
@@ -158,7 +136,7 @@ def test_channel_manifests_only_import_contract_modules() -> None:
         allowed_channel_imports = {
             module
             for module in imports
-            if module.startswith(f"nanobot.channels.{name}.")
+            if module.startswith(f"nanodesk.channels.{name}.")
             and not module.endswith(".runtime")
         }
         unexpected = imports - allowed_imports - allowed_channel_imports
@@ -190,9 +168,9 @@ def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
     plugin = load_channel_package("feishu")
 
     assert plugin is not None
-    assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
+    assert plugin.runtime == "nanodesk.channels.feishu.runtime:FeishuChannel"
     assert plugin.dependencies == ("lark-oapi>=1.5.0,<2.0.0",)
-    assert plugin.connector == "nanobot.channels.feishu.connect:FeishuConnectStore"
+    assert plugin.connector == "nanodesk.channels.feishu.connect:FeishuConnectStore"
     assert plugin.management.multi_instance is True
     assert plugin.webui == "webui/index.tsx"
 
@@ -201,21 +179,21 @@ def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
     plugin = load_channel_package("weixin")
 
     assert plugin is not None
-    assert plugin.runtime == "nanobot.channels.weixin.runtime:WeixinChannel"
+    assert plugin.runtime == "nanodesk.channels.weixin.runtime:WeixinChannel"
     assert plugin.dependencies == ("qrcode[pil]>=8.0", "pycryptodome>=3.20.0")
-    assert plugin.connector == "nanobot.channels.weixin.connect:WeixinConnectStore"
+    assert plugin.connector == "nanodesk.channels.weixin.connect:WeixinConnectStore"
     assert plugin.webui == "webui/index.tsx"
 
 
 def test_package_manifests_do_not_import_runtimes() -> None:
     code = f"""
 import sys
-from nanobot.channels.plugin import load_channel_package
+from nanodesk.channels.plugin import load_channel_package
 
 for name in {sorted(EXPECTED_CHANNELS)!r}:
     plugin = load_channel_package(name)
     assert plugin is not None
-    assert f"nanobot.channels.{{name}}.runtime" not in sys.modules
+    assert f"nanodesk.channels.{{name}}.runtime" not in sys.modules
 """
     result = subprocess.run(
         [sys.executable, "-c", code],

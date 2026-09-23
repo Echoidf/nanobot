@@ -22,6 +22,7 @@ interface ThreadMessagesProps {
   onOpenFilePreview?: (path: string) => void;
   onForkFromMessage?: (beforeUserIndex: number) => void;
   onQuoteSelection?: (text: string) => void;
+  onCardOptionSelect?: (value: string) => void;
 }
 
 export type DisplayUnit = TurnUnit;
@@ -66,6 +67,7 @@ export function ThreadMessages({
   onOpenFilePreview,
   onForkFromMessage,
   onQuoteSelection,
+  onCardOptionSelect,
 }: ThreadMessagesProps) {
   const { t } = useTranslation();
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -161,6 +163,7 @@ export function ThreadMessages({
             slashCommands={slashCommands}
             onOpenFilePreview={onOpenFilePreview}
             onForkFromMessage={onForkFromMessage}
+            onCardOptionSelect={onCardOptionSelect}
           />
         );
       })}
@@ -242,6 +245,7 @@ interface ThreadDisplayUnitProps {
   slashCommands: SlashCommand[];
   onOpenFilePreview?: (path: string) => void;
   onForkFromMessage?: (beforeUserIndex: number) => void;
+  onCardOptionSelect?: (value: string) => void;
 }
 
 const ThreadDisplayUnit = memo(function ThreadDisplayUnit({
@@ -260,6 +264,7 @@ const ThreadDisplayUnit = memo(function ThreadDisplayUnit({
   slashCommands,
   onOpenFilePreview,
   onForkFromMessage,
+  onCardOptionSelect,
 }: ThreadDisplayUnitProps) {
   // Introducing content-visibility after a unit has painted can move the
   // browser's scroll anchor. Only units deferred on their first render may
@@ -298,6 +303,7 @@ const ThreadDisplayUnit = memo(function ThreadDisplayUnit({
             slashCommands={slashCommands}
             onOpenFilePreview={onOpenFilePreview}
             onForkFromHere={forkIndex !== undefined ? onForkFromHere : undefined}
+            onCardOptionSelect={onCardOptionSelect}
           />
         )}
       </div>
@@ -326,6 +332,7 @@ function threadDisplayUnitPropsEqual(
     && previous.slashCommands === next.slashCommands
     && previous.onOpenFilePreview === next.onOpenFilePreview
     && previous.onForkFromMessage === next.onForkFromMessage
+    && previous.onCardOptionSelect === next.onCardOptionSelect
   );
 }
 

@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.agent.tools.search import FindFilesTool, GrepTool
-from nanobot.agent.tools.web import WebSearchTool
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import WebSearchConfig
-from nanobot.providers.base import GenerationSettings
-from nanobot.utils.llm_runtime import LLMRuntime
+from nanodesk.agent.loop import AgentLoop
+from nanodesk.agent.subagent import SubagentManager, SubagentStatus
+from nanodesk.agent.tools.search import FindFilesTool, GrepTool
+from nanodesk.agent.tools.web import WebSearchTool
+from nanodesk.bus.queue import MessageBus
+from nanodesk.config.schema import WebSearchConfig
+from nanodesk.providers.base import GenerationSettings
+from nanodesk.utils.llm_runtime import LLMRuntime
 
 
 @pytest.mark.asyncio
@@ -32,7 +32,7 @@ async def test_web_search_tool_refreshes_dynamic_config_loader(monkeypatch) -> N
 
     monkeypatch.setattr(WebSearchTool, "_search_duckduckgo", fake_duckduckgo)
 
-    assert await tool.execute("nanobot") == "duckduckgo:nanobot:3"
+    assert await tool.execute("nanodesk") == "duckduckgo:nanodesk:3"
 
 
 @pytest.mark.asyncio

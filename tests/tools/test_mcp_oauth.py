@@ -7,7 +7,7 @@ import httpx
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from nanobot.agent.tools.mcp_oauth import (
+from nanodesk.agent.tools.mcp_oauth import (
     MCPAuthorizationRequiredError,
     MCPOAuthHandlers,
     MCPOAuthStorage,
@@ -15,11 +15,11 @@ from nanobot.agent.tools.mcp_oauth import (
     delete_mcp_oauth_credentials,
     mcp_oauth_has_credentials,
 )
-from nanobot.config.schema import MCPServerConfig
+from nanodesk.config.schema import MCPServerConfig
 
 
 def _use_data_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("nanobot.agent.tools.mcp_oauth.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("nanodesk.agent.tools.mcp_oauth.get_data_dir", lambda: tmp_path)
 
 
 def test_mcp_server_config_accepts_explicit_oauth() -> None:
@@ -294,7 +294,7 @@ async def test_official_mcp_sdk_completes_discovery_registration_and_token_excha
                 "/webui/public/brand/nanobot_apple_touch.png"
             )
             return httpx.Response(201, json={
-                "client_id": "nanobot-client",
+                "client_id": "nanodesk-client",
                 "redirect_uris": ["https://agent.example/auth/mcp/callback"],
                 "token_endpoint_auth_method": "none",
             })

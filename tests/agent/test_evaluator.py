@@ -1,7 +1,7 @@
 import pytest
 
-from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
-from nanobot.utils.evaluator import (
+from nanodesk.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from nanodesk.utils.evaluator import (
     EVALUATOR_PROMPT_MAX_CHARS,
     default_evaluator_prompt,
     evaluate_response,

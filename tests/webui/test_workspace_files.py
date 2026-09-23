@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from nanobot.security.workspace_access import default_workspace_scope
-from nanobot.webui.workspace_files import WorkspaceFileListingError, workspace_files_payload
+from nanodesk.security.workspace_access import default_workspace_scope
+from nanodesk.webui.workspace_files import WorkspaceFileListingError, workspace_files_payload
 
 
 def test_lists_workspace_files_and_folders(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_fuzzy_match_prefers_directories_and_nested_files(tmp_path: Path) -> Non
 
 def test_root_listing_pushes_noise_entries_last(tmp_path: Path) -> None:
     """Hidden tool folders and dunder dirs must not crowd out project entries."""
-    for name in (".nanobot", ".claude", "__mocks__", "src", "docs"):
+    for name in (".nanodesk", ".claude", "__mocks__", "src", "docs"):
         (tmp_path / name).mkdir()
     (tmp_path / "AGENTS.md").write_text("readme", encoding="utf-8")
     (tmp_path / ".env").write_text("K=V", encoding="utf-8")
@@ -72,7 +72,7 @@ def test_root_listing_pushes_noise_entries_last(tmp_path: Path) -> None:
     paths = [item["path"] for item in workspace_files_payload(None, query=None, scope=scope)["items"]]
 
     # Project entries first (folders before files), then the demoted noise.
-    assert paths == ["docs", "src", "AGENTS.md", ".claude", ".nanobot", "__mocks__", ".env"]
+    assert paths == ["docs", "src", "AGENTS.md", ".claude", ".nanodesk", "__mocks__", ".env"]
 
 
 def test_fuzzy_query_ranks_noise_below_project_matches(tmp_path: Path) -> None:
@@ -95,11 +95,11 @@ def test_fuzzy_query_ranks_noise_below_project_matches(tmp_path: Path) -> None:
 def test_noise_entries_still_surface_when_queried_directly(tmp_path: Path) -> None:
     """Demotion is ordering only: explicitly searched hidden entries still resolve."""
     (tmp_path / "src").mkdir()
-    (tmp_path / ".nanobot").mkdir()
-    (tmp_path / ".nanobot" / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".nanodesk").mkdir()
+    (tmp_path / ".nanodesk" / "config.json").write_text("{}", encoding="utf-8")
     scope = default_workspace_scope(tmp_path, restrict_to_workspace=True)
 
     paths = [item["path"] for item in workspace_files_payload(None, query="config", scope=scope)["items"]]
 
-    assert paths == [".nanobot/config.json"]
+    assert paths == [".nanodesk/config.json"]
 

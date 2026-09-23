@@ -8,7 +8,7 @@
 
 - 页面级：`Agent Workbench`、`Agents`、`Choose an agent profile, inspect its prompt bindings and capabilities, then start a chat with that profile.`、`Refresh`
 - 列表级：`Agent List`、`No agents are configured.`、`No description provided.`
-- 详情级：`Profile`、`Agent ID`、`Model Preset`、`Skills`、`Tools`、`Capability Summary`、`Recent Chats`、`New Chat With Agent`、`This agent uses the default Nanobot runtime profile.`
+- 详情级：`Profile`、`Agent ID`、`Model Preset`、`Skills`、`Tools`、`Capability Summary`、`Recent Chats`、`New Chat With Agent`、`This agent uses the default Nanodesk runtime profile.`
 - 状态级：`Ready`、`Needs attention`、`Disabled`、`Available`、`Blocked`、`Restricted tools`
 - 空态/告警：`This agent does not bind extra skills.`、`Missing skills: ...`、`Disabled skills: ...`、`This agent can use the default tool set.`、`Missing tools: ...`、`No recent chats for this agent.`、`No agent profile is available.`、`Untitled chat`、`No preview yet.`
 
@@ -86,7 +86,7 @@ New Chat / Search / Agents / Apps / Skills / Automations   ← 动作区（新�
     "title": "Profile",
     "agentId": "Agent ID",
     "modelPreset": "Model Preset",
-    "defaultRuntime": "This agent uses the default Nanobot runtime profile."
+    "defaultRuntime": "This agent uses the default Nanodesk runtime profile."
   },
   "skills": {
     "title": "Skills",
@@ -138,7 +138,7 @@ New Chat / Search / Agents / Apps / Skills / Automations   ← 动作区（新�
     "title": "基本信息",
     "agentId": "Agent ID",
     "modelPreset": "模型预设",
-    "defaultRuntime": "该 Agent 使用默认 nanobot 运行档案。"
+    "defaultRuntime": "该 Agent 使用默认 nanodesk 运行档案。"
   },
   "skills": {
     "title": "技能",

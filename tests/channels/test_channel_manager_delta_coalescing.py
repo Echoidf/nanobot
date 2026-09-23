@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.outbound_events import (
+from nanodesk.bus.events import OutboundMessage
+from nanodesk.bus.outbound_events import (
     ProgressEvent,
     RetryWaitEvent,
     StreamDeltaEvent,
@@ -14,11 +14,11 @@ from nanobot.bus.outbound_events import (
     outbound_event_from_message,
     outbound_message_for_event,
 )
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
-from nanobot.channels.manager import ChannelManager
-from nanobot.channels.mattermost.runtime import MattermostChannel
-from nanobot.config.schema import Config
+from nanodesk.bus.queue import MessageBus
+from nanodesk.channels.base import BaseChannel
+from nanodesk.channels.manager import ChannelManager
+from nanodesk.channels.qq.runtime import QQChannel
+from nanodesk.config.schema import Config
 
 
 class MockChannel(BaseChannel):
@@ -323,8 +323,8 @@ class TestProgressFiltering:
         manager.bus = bus
 
         channel = manager._build_channel(
-            "mattermost",
-            MattermostChannel,
+            "qq",
+            QQChannel,
             {"enabled": True},
         )
 
@@ -332,8 +332,8 @@ class TestProgressFiltering:
         assert channel.send_tool_hints is False
 
         opted_in = manager._build_channel(
-            "mattermost",
-            MattermostChannel,
+            "qq",
+            QQChannel,
             {
                 "enabled": True,
                 "sendProgress": True,

@@ -1475,6 +1475,14 @@
       "railAria": "用户提示词导航"
     }
   },
+  "cards": {
+    "multiHint": "可多选，选中后点确认",
+    "confirm": "确认（{{selected}}）",
+    "other": "其他…",
+    "customPlaceholder": "输入你的回答…",
+    "send": "发送",
+    "answered": "已回答"
+  },
   "message": {
     "streaming": "流式输出中",
     "delivery": {

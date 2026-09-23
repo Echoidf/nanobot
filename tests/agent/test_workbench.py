@@ -6,9 +6,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.agent.workbench import (
+from nanodesk.agent.tools.base import Tool
+from nanodesk.agent.tools.registry import ToolRegistry
+from nanodesk.agent.workbench import (
     AgentProfileError,
     agent_profile_by_id,
     agents_payload,
@@ -16,7 +16,7 @@ from nanobot.agent.workbench import (
     restricted_tools_for_agent,
     validate_agent_profile,
 )
-from nanobot.config.schema import Config
+from nanodesk.config.schema import Config
 
 
 class DummyTool(Tool):

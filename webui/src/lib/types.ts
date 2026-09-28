@@ -319,6 +319,21 @@ export interface SkillInstallPayload extends SkillsPayload {
   };
 }
 
+export interface TaskStateWsPayload {
+  active: boolean;
+  status: "active" | "blocked" | "completed" | string;
+  objective?: string;
+  revision: number;
+  updated_at?: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: "pending" | "running" | "completed" | "cancelled" | "blocked" | "failed" | string;
+    note?: string;
+    evidence?: string;
+  }>;
+}
+
 /** Structured UI blob on ``progress`` WS frames; channels may add more ``kind`` values later. */
 export interface AgentUIBlob {
   kind: string;
@@ -1480,6 +1495,11 @@ export type InboundEvent =
       event: "goal_state";
       chat_id: string;
       goal_state: GoalStateWsPayload;
+    }
+  | {
+      event: "task_state";
+      chat_id: string;
+      task_state: TaskStateWsPayload;
     }
   | {
       event: "session_updated";

@@ -1667,6 +1667,41 @@ describe("NanodeskClient", () => {
     expect(client.getGoalState("chat-te")).toEqual({ active: true, objective: "Long task" });
   });
 
+  it("records task_state per chat_id without an onChat subscriber", () => {
+    const client = new NanodeskClient({
+      url: "ws://test",
+      reconnect: false,
+      socketFactory: (url) => new FakeSocket(url) as unknown as WebSocket,
+    });
+    client.connect();
+    lastSocket().fakeOpen();
+    lastSocket().fakeMessage({
+      event: "task_state",
+      chat_id: "chat-task-a",
+      task_state: {
+        active: true,
+        status: "active",
+        objective: "Fix the suite",
+        revision: 1,
+        tasks: [{ id: "task-1", title: "Reproduce", status: "running" }],
+      },
+    });
+    lastSocket().fakeMessage({
+      event: "task_state",
+      chat_id: "chat-task-b",
+      task_state: {
+        active: true,
+        status: "active",
+        objective: "Ship API",
+        revision: 3,
+        tasks: [],
+      },
+    });
+    expect(client.getTaskState("chat-task-a")?.objective).toBe("Fix the suite");
+    expect(client.getTaskState("chat-task-b")?.revision).toBe(3);
+    expect(client.getTaskState("chat-task-c")).toBeUndefined();
+  });
+
   it("buffers after unsubscribe until the chat is subscribed again", () => {
     const client = new NanodeskClient({
       url: "ws://test",

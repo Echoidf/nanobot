@@ -95,6 +95,10 @@ from nanodesk.session.model_selection import (
     reasoning_effort_from_metadata,
 )
 from nanodesk.session.summary import SessionSummary
+from nanodesk.session.task_state import (
+    task_list_active,
+    task_state_runtime_lines,
+)
 from nanodesk.triggers.local_turns import LocalTriggerTurnCoordinator
 from nanodesk.utils.artifacts import generated_image_paths_from_messages
 from nanodesk.utils.cancellation import task_is_cancelling
@@ -1225,12 +1229,14 @@ class AgentLoop:
         def _goal_continue() -> str | None:
             _goal_lines = goal_state_runtime_lines(session.metadata if session is not None else None)
             if not _goal_lines:
+                _goal_lines = task_state_runtime_lines(session.metadata if session is not None else None)
+            if not _goal_lines:
                 return None
             return (
-                "You have an active sustained goal:\n\n"
+                "You have active work:\n\n"
                 + "\n".join(_goal_lines)
-                + "\n\nPlease continue working toward the objective using your tools, "
-                "or call update_goal with action='complete' if the work is truly finished."
+                + "\n\nContinue it using your tools, or report what is blocking you. "
+                "Handle a user message first whenever one is available."
             )
 
         session_metadata = session.metadata if session is not None else None
@@ -1283,7 +1289,10 @@ class AgentLoop:
                     metadata=session_metadata,
                     message_metadata=metadata,
                 ),
-                goal_active_predicate=lambda: sustained_goal_active(session.metadata) if session is not None else False,
+                goal_active_predicate=lambda: (
+                    sustained_goal_active(session.metadata)
+                    or task_list_active(session.metadata)
+                ) if session is not None else False,
                 goal_continue_message=_goal_continue,
                 finalize_on_max_iterations=turn_continuation.should_finalize_on_max_iterations(
                     pending_queue_available=pending_queue is not None and session is not None,

@@ -27,6 +27,7 @@ function makeClient() {
   const latestRunTurnIdByChatId = new Map<string, string>();
   const completedTurnIdsByChatId = new Map<string, Set<string>>();
   const goalStateByChatId = new Map<string, import("@/lib/types").GoalStateWsPayload>();
+  const taskStateByChatId = new Map<string, import("@/lib/types").TaskStateWsPayload>();
   let status: ConnectionStatus = "open";
   const advanceRunGeneration = (chatId: string, turnId?: string) => {
     runGenerationByChatId.set(chatId, (runGenerationByChatId.get(chatId) ?? 0) + 1);
@@ -118,6 +119,7 @@ function makeClient() {
     canReconcileCanonicalCompletion,
     reconcileCanonicalCompletion,
     getGoalState: (chatId: string) => goalStateByChatId.get(chatId),
+    getTaskState: (chatId: string) => taskStateByChatId.get(chatId),
     onChat: (chatId: string, handler: (ev: import("@/lib/types").InboundEvent) => void) => {
       let handlers = chatHandlers.get(chatId);
       if (!handlers) {
@@ -166,6 +168,9 @@ function makeClient() {
       }
       if (ev.event === "goal_state") {
         goalStateByChatId.set(chatId, ev.goal_state);
+      }
+      if (ev.event === "task_state") {
+        taskStateByChatId.set(chatId, ev.task_state);
       }
       for (const h of chatHandlers.get(chatId) ?? []) h(ev);
     },
@@ -470,6 +475,63 @@ describe("ThreadShell", () => {
     expect(reference).not.toHaveAttribute("tabindex");
     fireEvent.click(reference);
     expect(screen.queryByText("failed to read file")).not.toBeInTheDocument();
+  });
+
+  it("passes task_state snapshots through to the composer drawer", async () => {
+    const client = makeClient();
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404, json: async () => ({}) } as Response);
+
+    render(wrap(
+      client,
+      <ThreadShell
+        session={session("task-drawer")}
+        title="Task drawer"
+        onToggleSidebar={() => {}}
+      />,
+    ));
+
+    await act(async () => {
+      client._emitChat("task-drawer", {
+        event: "task_state",
+        chat_id: "task-drawer",
+        task_state: {
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 2,
+          tasks: [
+            { id: "task-1", title: "Reproduce the failing test", status: "running" },
+            { id: "task-2", title: "Patch the validation step", status: "pending" },
+          ],
+        },
+      });
+    });
+
+    expect(await screen.findByTestId("task-state-strip")).toHaveTextContent(
+      "Reproduce the failing test",
+    );
+
+    // The stream must not be affected by a task update: no spinner, no stop button.
+    await act(async () => {
+      client._emitChat("task-drawer", {
+        event: "task_state",
+        chat_id: "task-drawer",
+        task_state: {
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 3,
+          tasks: [
+            { id: "task-1", title: "Reproduce the failing test", status: "completed" },
+            { id: "task-2", title: "Patch the validation step", status: "running" },
+          ],
+        },
+      });
+    });
+    expect(screen.getByTestId("task-state-strip")).toHaveTextContent(
+      "Patch the validation step",
+    );
+    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
   });
 
   it("hides actions for a complete assistant-only message until turn_end", async () => {

@@ -114,7 +114,29 @@ _KIMI_SERVER_MANAGED_TEMPERATURE_MODELS: frozenset[str] = frozenset({
     "kimi-k2.5",
     "kimi-k2.6",
 })
-_TEXT_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+_TEXT_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL | re.IGNORECASE)
+# XML-attribute style tool protocol emitted by some models, e.g.
+# ``<tool_call><function=exec><parameter=command>git status</parameter></function></tool_call>``.
+# The JSON shape above stays the primary contract; these patterns only cover
+# the legacy XML shorthand so it can be executed instead of leaking into chat.
+_FUNCTION_EQ_RE = re.compile(r"<function\s*=\s*([A-Za-z0-9_\-]+)\s*>", re.IGNORECASE)
+_FUNCTION_NAME_ATTR_RE = re.compile(
+    r"<function(?:\s+[^>]*)?\bname\s*=\s*[\"']?([A-Za-z0-9_\-]+)[\"']?[^>]*>",
+    re.IGNORECASE,
+)
+_PARAMETER_EQ_RE = re.compile(
+    r"<parameter\s*=\s*([A-Za-z0-9_\-]+)\s*>(.*?)</parameter\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_PARAMETER_NAME_ATTR_RE = re.compile(
+    r"<parameter(?:\s+[^>]*)?\bname\s*=\s*[\"']?([A-Za-z0-9_\-]+)[\"']?[^>]*>(.*?)</parameter\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Trailing ``<tool_call>`` block without a closing tag (truncated stream or
+# model that never closed it). Only stripped when it carries function/parameter
+# markers so genuine prose mentioning the tag is left alone.
+_TRAILING_TOOL_CALL_RE = re.compile(r"<tool_call\b[^>]*>[\s\S]*$", re.IGNORECASE)
+_FENCED_CODE_SPLIT_RE = re.compile(r"(```[\s\S]*?(?:```|$))")
 # Thinking-capable MiMo models per Xiaomi docs (see
 # tests/providers/test_xiaomi_mimo_thinking.py). mimo-v2-flash is omitted
 # because it does not support thinking.
@@ -237,52 +259,130 @@ def _strip_json_fence(text: str) -> str:
     return "\n".join(lines[1:-1]).strip()
 
 
+def _parse_xml_style_tool_call(inner: str) -> ToolCallRequest | None:
+    """Parse ``<function=...><parameter=...>`` shorthand into a tool call."""
+    function_match = _FUNCTION_EQ_RE.search(inner) or _FUNCTION_NAME_ATTR_RE.search(inner)
+    if not function_match:
+        return None
+    name = function_match.group(1).strip()
+    if not name:
+        return None
+    arguments: dict[str, Any] = {}
+    for pattern in (_PARAMETER_EQ_RE, _PARAMETER_NAME_ATTR_RE):
+        for param_match in pattern.finditer(inner):
+            param_name = param_match.group(1).strip()
+            if not param_name or param_name in arguments:
+                continue
+            arguments[param_name] = param_match.group(2).strip()
+    if not arguments:
+        # A bare ``<function=exec>raw command</function>`` carries no named
+        # parameters; keep it executable as a single command argument only
+        # when the intent is unambiguous.
+        bare = re.sub(r"</?function[^>]*>", "", inner, flags=re.IGNORECASE).strip()
+        bare = re.sub(r"</?parameter[^>]*>", "", bare, flags=re.IGNORECASE).strip()
+        if bare:
+            arguments = {"command": bare} if name == "exec" else {"input": bare}
+    return ToolCallRequest(id=_short_tool_id(), name=name, arguments=arguments)
+
+
+def _iter_visible_segments(content: str) -> Iterable[tuple[bool, str]]:
+    """Yield ``(is_code, segment)`` split on fenced code blocks.
+
+    Protocol stripping only applies to prose segments so a code sample that
+    discusses ``<tool_call>`` markup is never rewritten.
+    """
+    parts = _FENCED_CODE_SPLIT_RE.split(content)
+    for index, part in enumerate(parts):
+        if not part:
+            continue
+        yield index % 2 == 1, part
+
+
 def _extract_text_tool_calls(content: str | None) -> tuple[str | None, list[ToolCallRequest]]:
     """Normalize common text-format tool call blocks into structured calls."""
-    if not content or "<tool_call>" not in content:
+    if not content or "<tool_call" not in content.lower():
         return content, []
 
     tool_calls: list[ToolCallRequest] = []
-    spans: list[tuple[int, int]] = []
-    for match in _TEXT_TOOL_CALL_RE.finditer(content):
+    strip_spans: list[tuple[int, int]] = []
+
+    def _parse_block(inner: str) -> ToolCallRequest | None:
         try:
-            raw_payload: object = json.loads(
-                _strip_json_fence(match.group(1))
-            )
+            raw_payload: object = json.loads(_strip_json_fence(inner))
         except Exception:
-            continue
-        if not isinstance(raw_payload, dict):
-            continue
-        payload = cast(dict[str, Any], raw_payload)
+            raw_payload = None
+        if isinstance(raw_payload, dict):
+            payload = cast(dict[str, Any], raw_payload)
+            nested = cast(object, payload.get("tool_call"))
+            if isinstance(nested, dict):
+                payload = cast(dict[str, Any], nested)
+            function = cast(object, payload.get("function"))
+            if not isinstance(function, dict):
+                function = payload
+            function_data = cast(dict[str, Any], function)
+            name = cast(object, function_data.get("name"))
+            if isinstance(name, str) and name:
+                arguments = function_data.get(
+                    "arguments",
+                    payload.get("arguments", {}),
+                )
+                return ToolCallRequest(
+                    id=str(payload.get("id") or _short_tool_id()),
+                    name=name,
+                    arguments=parse_tool_arguments(arguments),
+                )
+        return _parse_xml_style_tool_call(inner)
 
-        nested = cast(object, payload.get("tool_call"))
-        if isinstance(nested, dict):
-            payload = cast(dict[str, Any], nested)
-        function = cast(object, payload.get("function"))
-        if not isinstance(function, dict):
-            function = payload
-        function_data = cast(dict[str, Any], function)
-        name = cast(object, function_data.get("name"))
-        if not isinstance(name, str) or not name:
+    # Only scan prose outside fenced code blocks; rebuild spans against the
+    # original string so stripping stays byte-exact.
+    prose_ranges: list[tuple[int, int]] = []
+    cursor = 0
+    for is_code, segment in _iter_visible_segments(content):
+        start, cursor = cursor, cursor + len(segment)
+        if not is_code:
+            prose_ranges.append((start, cursor))
+
+    def _in_prose(span: tuple[int, int]) -> bool:
+        return any(start <= span[0] and span[1] <= end for start, end in prose_ranges)
+
+    for match in _TEXT_TOOL_CALL_RE.finditer(content):
+        if not _in_prose(match.span()):
             continue
+        parsed = _parse_block(match.group(1))
+        if parsed is not None:
+            tool_calls.append(parsed)
+        else:
+            logger.warning("Dropping unparsable <tool_call> block from visible reply")
+        strip_spans.append(match.span())
 
-        arguments = function_data.get(
-            "arguments",
-            payload.get("arguments", {}),
-        )
-        tool_calls.append(ToolCallRequest(
-            id=str(payload.get("id") or _short_tool_id()),
-            name=name,
-            arguments=parse_tool_arguments(arguments),
-        ))
-        spans.append(match.span())
+    if not strip_spans:
+        # No closed block in prose: hide a trailing unclosed protocol fragment
+        # (e.g. a truncated stream) instead of rendering it as chat text.
+        for start, end in prose_ranges:
+            segment = content[start:end]
+            trailing = _TRAILING_TOOL_CALL_RE.search(segment)
+            if not trailing:
+                continue
+            fragment = trailing.group(0)
+            if "<function" not in fragment.lower() and "<parameter" not in fragment.lower():
+                continue
+            parsed = _parse_block(re.sub(
+                r"^<tool_call\b[^>]*>", "", fragment, flags=re.IGNORECASE,
+            ))
+            if parsed is not None:
+                tool_calls.append(parsed)
+            else:
+                logger.warning("Dropping trailing unclosed <tool_call> fragment from visible reply")
+            strip_spans.append((start + trailing.start(), end))
+            break
 
-    if not tool_calls:
+    if not strip_spans:
         return content, []
 
+    strip_spans.sort()
     visible_parts: list[str] = []
     last = 0
-    for start, end in spans:
+    for start, end in strip_spans:
         visible_parts.append(content[last:start])
         last = end
     visible_parts.append(content[last:])

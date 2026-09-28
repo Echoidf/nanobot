@@ -95,6 +95,14 @@ class GoalStateChanged:
 
 
 @dataclass(frozen=True)
+class TaskStateChanged:
+    """A session's structured task-list state changed."""
+
+    context: RuntimeEventContext
+    session_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RuntimeModelChanged:
     """The active runtime model/preset changed."""
 
@@ -110,6 +118,7 @@ RuntimeEvent = (
     | TurnRunStatusChanged
     | TurnCompleted
     | GoalStateChanged
+    | TaskStateChanged
     | RuntimeModelChanged
 )
 RuntimeEventType = (
@@ -120,6 +129,7 @@ RuntimeEventType = (
     | type[TurnRunStatusChanged]
     | type[TurnCompleted]
     | type[GoalStateChanged]
+    | type[TaskStateChanged]
     | type[RuntimeModelChanged]
 )
 RuntimeEventHandler = Callable[[Any], Awaitable[None] | None]

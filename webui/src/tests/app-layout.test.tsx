@@ -262,6 +262,7 @@ vi.mock("@/lib/nanodesk-client", async (importOriginal) => {
     getRunStartedAt = () => null;
     getRunTurnId = () => null;
     getGoalState = () => undefined;
+    getTaskState = () => undefined;
     sendMessage = sendMessageSpy;
     newChat = vi.fn();
     newTemporaryChat = newTemporaryChatSpy;

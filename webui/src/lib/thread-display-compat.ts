@@ -2,6 +2,7 @@ import { extractCardOptionsFromText, resolveCardChoices } from "@/lib/card-optio
 import { isModelCommandResponseText, isModelCommandText } from "@/lib/format";
 import { isSystemCommandTurnId } from "@/lib/nanodesk-client";
 import { scrubSubagentUiMessages } from "@/lib/subagent-channel-display";
+import { stripToolCallMarkup } from "@/lib/tool-call-markup";
 import type { UIMessage } from "@/lib/types";
 
 const CARD_FENCE_START = /(?:^|\n)```[ \t]*cards/;
@@ -88,6 +89,28 @@ function deriveAssistantCompletionTimes(messages: UIMessage[]): UIMessage[] {
   });
 }
 
+/**
+ * Hide leaked text-format tool protocol from assistant bubbles.
+ *
+ * The provider normally strips `<tool_call>…</tool_call>` blocks before the
+ * reply reaches the transcript, but persisted history and truncated streams
+ * can still carry the raw markup. Clean the rendered copy only; the stored
+ * message stays untouched. Code fences are preserved by the helper.
+ */
+function stripToolCallMarkupFromMessages(messages: UIMessage[]): UIMessage[] {
+  let next: UIMessage[] | null = null;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role !== "assistant" || message.kind === "trace") continue;
+    if (message.content.toLowerCase().indexOf("<tool_call") === -1) continue;
+    const content = stripToolCallMarkup(message.content);
+    if (content === message.content) continue;
+    next ??= [...messages];
+    next[index] = { ...message, content };
+  }
+  return next ?? messages;
+}
+
 export function projectWebuiThreadMessages(messages: UIMessage[]): UIMessage[] {
   const normalized = scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(messages));
   const hiddenTurns = new Set(normalized.flatMap((message) => (
@@ -103,5 +126,6 @@ export function projectWebuiThreadMessages(messages: UIMessage[]): UIMessage[] {
   ));
   // Card grouping and answering run on the visible list only: a hidden system
   // turn must never count as an answer to a card group.
-  return resolveCardChoices(deriveAssistantCompletionTimes(hoistCardOptionMessages(visible)));
+  const scrubbed = stripToolCallMarkupFromMessages(visible);
+  return resolveCardChoices(deriveAssistantCompletionTimes(hoistCardOptionMessages(scrubbed)));
 }

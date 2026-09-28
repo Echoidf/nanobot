@@ -1459,6 +1459,112 @@ describe("ThreadComposer", () => {
     expect(dialog).toHaveTextContent(longObjective);
   });
 
+  it("renders the task drawer read-only with live status updates and no mode controls", () => {
+    const tasks = [
+      { id: "task-1", title: "Reproduce the failing test", status: "running" },
+      { id: "task-2", title: "Patch the validation step", status: "pending" },
+      { id: "task-3", title: "Run the suite", status: "pending" },
+    ];
+    const { rerender } = render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Type your message..."
+        taskState={{
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 1,
+          tasks,
+        }}
+      />,
+    );
+
+    const strip = screen.getByTestId("task-state-strip");
+    expect(strip).toHaveTextContent("Reproduce the failing test");
+    expect(strip).toHaveTextContent("0/3 · 0%");
+
+    // The drawer is display-only: no close, cancel, pause, or per-step menu controls.
+    expect(screen.queryByLabelText(/close task/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pause/i })).not.toBeInTheDocument();
+    expect(strip.querySelector("ul, ol, [role='menu'], [role='menuitem']")).toBeNull();
+
+    // Expanding only reveals the list; it does not expose an editor.
+    fireEvent.click(strip);
+    expect(screen.getByTestId("task-state-list")).toBeInTheDocument();
+    expect(screen.getByTestId("task-state-item-task-1")).toHaveTextContent("进行中");
+    expect(
+      screen.getByTestId("task-state-list").querySelectorAll("button, input, textarea, select"),
+    ).toHaveLength(0);
+
+    // A tool-driven status change updates the drawer in place via WS state.
+    rerender(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Type your message..."
+        taskState={{
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 4,
+          tasks: [
+            {
+              id: "task-1",
+              title: "Reproduce the failing test",
+              status: "completed",
+              evidence: "由用户手动完成",
+            },
+            { id: "task-2", title: "Patch the validation step", status: "running" },
+            { id: "task-3", title: "Run the suite", status: "pending" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("task-state-item-task-1")).toHaveTextContent("已完成");
+    expect(screen.getByTestId("task-state-item-task-1")).toHaveTextContent("由用户手动完成");
+    expect(screen.getByTestId("task-state-item-task-2")).toHaveTextContent("进行中");
+    expect(screen.getByTestId("task-state-strip")).toHaveTextContent("Patch the validation step");
+
+    // Completed lists disappear without any explicit dismissal action.
+    rerender(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Type your message..."
+        taskState={{
+          active: false,
+          status: "completed",
+          objective: "Fix the suite",
+          revision: 6,
+          tasks: tasks.map((task) => ({ ...task, status: "completed" })),
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("task-state-strip")).not.toBeInTheDocument();
+  });
+
+  it("keeps the task drawer out of the way of send behavior", () => {
+    const onSend = vi.fn();
+    render(
+      <ThreadComposer
+        onSend={onSend}
+        placeholder="Type your message..."
+        taskState={{
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 1,
+          tasks: [{ id: "task-1", title: "Reproduce", status: "running" }],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("task-state-strip")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Message input"), {
+      target: { value: "queued guidance" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("Message input"), { key: "Enter", code: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("queued guidance", undefined, undefined);
+  });
+
   it("opens a slash command palette and inserts the selected command", () => {
     const onSend = vi.fn();
     render(

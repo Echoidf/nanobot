@@ -20,6 +20,7 @@ from nanodesk.bus.outbound_events import (
     GoalStatusEvent,
     RuntimeModelUpdatedEvent,
     SessionUpdatedEvent,
+    TaskStateSyncEvent,
     TurnEndEvent,
     TurnModelUpdatedEvent,
     UserInputEvent,
@@ -32,6 +33,7 @@ from nanodesk.bus.runtime_events import (
     RuntimeEventContext,
     RuntimeModelChanged,
     SessionTurnStarted,
+    TaskStateChanged,
     TurnCompleted,
     TurnRunStatusChanged,
     TurnRuntimeAdmitted,
@@ -48,6 +50,7 @@ from nanodesk.session.session_messages import (
     SessionMessageEnvelope,
     session_message_envelope,
 )
+from nanodesk.session.task_state import task_state_ws_blob
 from nanodesk.utils.helpers import strip_think, truncate_text
 from nanodesk.utils.llm_runtime import LLMRuntime
 from nanodesk.webui.metadata import (
@@ -539,6 +542,10 @@ class WebuiTurnCoordinator:
                 GoalStateChanged,
             ),
             runtime_events.subscribe(
+                self._handle_task_state_changed,
+                TaskStateChanged,
+            ),
+            runtime_events.subscribe(
                 self._handle_runtime_model_changed,
                 RuntimeModelChanged,
             ),
@@ -669,6 +676,23 @@ class WebuiTurnCoordinator:
                 chat_id=cid,
                 event=GoalStateSyncEvent(
                     goal_state=goal_state_ws_blob(event.session_metadata),
+                ),
+                metadata=event.context.metadata,
+            ),
+        )
+
+    async def _handle_task_state_changed(self, event: TaskStateChanged) -> None:
+        if not self._is_websocket_event(event.context):
+            return
+        cid = str(event.context.chat_id or "").strip()
+        if not cid:
+            return
+        await self.bus.publish_outbound(
+            outbound_message_for_event(
+                channel=event.context.channel,
+                chat_id=cid,
+                event=TaskStateSyncEvent(
+                    task_state=task_state_ws_blob(event.session_metadata),
                 ),
                 metadata=event.context.metadata,
             ),

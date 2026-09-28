@@ -8,6 +8,7 @@ import type {
   ConnectionStatus,
   GoalStateWsPayload,
   InboundEvent,
+  TaskStateWsPayload,
   UIMessage,
 } from "@/lib/types";
 import { ClientProvider } from "@/providers/ClientProvider";
@@ -74,6 +75,7 @@ function fakeClient() {
   const runStartedAtByChatId = new Map<string, number>();
   const unsettledRunByChatId = new Map<string, boolean>();
   const goalStateByChatId = new Map<string, GoalStateWsPayload>();
+  const taskStateByChatId = new Map<string, TaskStateWsPayload>();
   let status: ConnectionStatus = "open";
 
   function recordGoalStatusForRunStrip(chatId: string, ev: InboundEvent) {
@@ -99,6 +101,14 @@ function fakeClient() {
     }
   }
 
+  function recordTaskStateSnapshot(chatId: string, ev: InboundEvent) {
+    if (ev.event === "task_state") {
+      const existing = taskStateByChatId.get(chatId);
+      if (existing && ev.task_state.revision < existing.revision) return;
+      taskStateByChatId.set(chatId, ev.task_state);
+    }
+  }
+
   return {
     client: {
       get status() {
@@ -120,6 +130,9 @@ function fakeClient() {
       },
       getGoalState(chatId: string) {
         return goalStateByChatId.get(chatId);
+      },
+      getTaskState(chatId: string) {
+        return taskStateByChatId.get(chatId);
       },
       hasUnsettledRun(chatId: string) {
         return unsettledRunByChatId.get(chatId) === true;
@@ -145,6 +158,7 @@ function fakeClient() {
     emit(chatId: string, ev: InboundEvent) {
       recordGoalStatusForRunStrip(chatId, ev);
       recordGoalStateSnapshot(chatId, ev);
+      recordTaskStateSnapshot(chatId, ev);
       const set = handlers.get(chatId);
       set?.forEach((h) => h(ev));
     },
@@ -3065,6 +3079,97 @@ describe("useNanodeskStream", () => {
       });
     });
     expect(result.current.goalState).toEqual({ active: false });
+  });
+
+  it("tracks task_state per chat and ignores stale revisions", () => {
+    const fake = fakeClient();
+    const { result, rerender } = renderHook(
+      ({ chatId }: { chatId: string }) => useNanodeskStream(chatId, EMPTY_MESSAGES),
+      {
+        wrapper: wrap(fake.client),
+        initialProps: { chatId: "chat-a" },
+      },
+    );
+
+    act(() => {
+      fake.emit("chat-a", {
+        event: "task_state",
+        chat_id: "chat-a",
+        task_state: {
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 2,
+          tasks: [{ id: "task-1", title: "Reproduce", status: "running" }],
+        },
+      });
+    });
+    expect(result.current.taskState?.tasks).toEqual([
+      { id: "task-1", title: "Reproduce", status: "running" },
+    ]);
+
+    // An out-of-order frame from a slow transport must not clobber newer state.
+    act(() => {
+      fake.emit("chat-a", {
+        event: "task_state",
+        chat_id: "chat-a",
+        task_state: {
+          active: true,
+          status: "active",
+          objective: "Fix the suite",
+          revision: 1,
+          tasks: [{ id: "task-1", title: "Reproduce", status: "pending" }],
+        },
+      });
+    });
+    expect(result.current.taskState?.revision).toBe(2);
+    expect(result.current.taskState?.tasks[0]?.status).toBe("running");
+
+    act(() => {
+      fake.emit("chat-a", {
+        event: "task_state",
+        chat_id: "chat-a",
+        task_state: {
+          active: false,
+          status: "completed",
+          objective: "Fix the suite",
+          revision: 5,
+          tasks: [{ id: "task-1", title: "Reproduce", status: "completed" }],
+        },
+      });
+    });
+    expect(result.current.taskState?.revision).toBe(5);
+
+    rerender({ chatId: "chat-b" });
+    expect(result.current.taskState).toBeUndefined();
+
+    rerender({ chatId: "chat-a" });
+    expect(result.current.taskState?.revision).toBe(5);
+  });
+
+  it("does not change isStreaming when task_state arrives", () => {
+    const fake = fakeClient();
+    const { result } = renderHook(
+      () => useNanodeskStream("chat-a", EMPTY_MESSAGES),
+      { wrapper: wrap(fake.client) },
+    );
+
+    expect(result.current.isStreaming).toBe(false);
+    act(() => {
+      fake.emit("chat-a", {
+        event: "task_state",
+        chat_id: "chat-a",
+        task_state: {
+          active: true,
+          status: "active",
+          objective: "O",
+          revision: 1,
+          tasks: [{ id: "task-1", title: "T", status: "running" }],
+        },
+      });
+    });
+    expect(result.current.taskState?.active).toBe(true);
+    expect(result.current.isStreaming).toBe(false);
   });
 
 });

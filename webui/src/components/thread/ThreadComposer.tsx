@@ -52,6 +52,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
+import { TaskStateStrip } from "@/components/thread/TaskStateStrip";
 import {
   floatingItemClassName,
   floatingSurfaceElevationClassName,
@@ -90,6 +91,7 @@ import type {
   CliAppInfo,
   ChatSummary,
   GoalStateWsPayload,
+  TaskStateWsPayload,
   McpPresetInfo,
   OutboundCliAppMention,
   OutboundMcpPresetMention,
@@ -220,6 +222,8 @@ interface ThreadComposerProps {
   onTranscribeAudio?: (dataUrl: string, options?: { durationMs?: number }) => Promise<string>;
   /** Sustained objective for this chat (WebSocket ``goal_state``). */
   goalState?: GoalStateWsPayload;
+  /** Structured task list for this chat (WebSocket ``task_state``), read-only display. */
+  taskState?: TaskStateWsPayload;
   workspaceScope?: WorkspaceScopePayload | null;
   workspaceSessionKey?: string | null;
   workspaceFileRefToken?: string;
@@ -926,6 +930,7 @@ export function ThreadComposer({
   surfaceRef,
   onTranscribeAudio,
   goalState,
+  taskState,
   workspaceScope = null,
   workspaceSessionKey = null,
   workspaceFileRefToken = "",
@@ -2408,6 +2413,7 @@ export function ThreadComposer({
           </div>
         ) : null}
         <GoalStateStrip goalState={goalState} />
+        <TaskStateStrip taskState={taskState} />
         <div className="relative">
           {hasMentionDecorations ? (
             <ComposerCliMentionOverlay

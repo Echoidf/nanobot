@@ -8,6 +8,7 @@ import type {
   SessionMention,
   SidebarStatePayload,
   GoalStateWsPayload,
+  TaskStateWsPayload,
   WorkspaceScopePayload,
 } from "./types";
 import { createHostWebSocket } from "./runtime";
@@ -224,6 +225,7 @@ export class NanodeskClient {
   private static readonly COMPLETED_TURN_FENCE_MAX = 256;
   /** Latest ``goal_state`` snapshot per ``chat_id`` (multi-session isolation). */
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
+  private taskStateByChatId = new Map<string, TaskStateWsPayload>();
   private pendingNewChat: PendingChatRequest | null = null;
   private pendingTranscriptions = new Map<string, PendingRequest<string>>();
   private pendingSystemCommands = new Map<string, PendingRequest<void>>();
@@ -531,6 +533,14 @@ export class NanodeskClient {
   /** Last ``goal_state`` payload for *chatId*, if any frame has arrived this connection. */
   getGoalState(chatId: string): GoalStateWsPayload | undefined {
     return this.goalStateByChatId.get(chatId);
+  }
+
+  getTaskState(chatId: string): TaskStateWsPayload | undefined {
+    return this.taskStateByChatId.get(chatId);
+  }
+
+  private recordTaskStateSnapshot(chatId: string, ev: InboundEvent): void {
+    if (ev.event === "task_state") this.taskStateByChatId.set(chatId, ev.task_state);
   }
 
   private advanceRunGeneration(chatId: string, turnId?: string): void {
@@ -1258,6 +1268,7 @@ export class NanodeskClient {
       this.recordGoalStatusForRunStrip(chatId, parsed);
       if (supersededRunCompletion) return;
       this.recordGoalStateSnapshot(chatId, parsed);
+      this.recordTaskStateSnapshot(chatId, parsed);
       this.dispatch(chatId, parsed);
     }
   }
@@ -1487,6 +1498,7 @@ export class NanodeskClient {
     this.unsettledRunTurnIdsByChatId.delete(chatId);
     this.canonicalCompletedTurnIdsByChatId.delete(chatId);
     this.goalStateByChatId.delete(chatId);
+     this.taskStateByChatId.delete(chatId);
     for (const key of [...this.runStartedAtByTurnKey.keys()]) {
       if (key.startsWith(`${chatId}\u0000`)) this.runStartedAtByTurnKey.delete(key);
     }

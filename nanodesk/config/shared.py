@@ -62,11 +62,15 @@ def apply_shared_instances(config: Config) -> None:
     shared_dirs: list[Path] = []
     warnings: list[str] = []
     shared_names: set[str] = set()
+    inherited_agent_ids: set[str] = set()
+    inherited_mcp_names: set[str] = set()
     shared_names_all = False
     instances = list(config.shared_instances or [])
     if not instances:
         config._shared_skills_dirs = []  # pyright: ignore[reportPrivateUsage]
         config._shared_skill_names = None  # pyright: ignore[reportPrivateUsage]
+        config._shared_agent_ids = set()  # pyright: ignore[reportPrivateUsage]
+        config._shared_mcp_names = set()  # pyright: ignore[reportPrivateUsage]
         config._shared_warnings = []  # pyright: ignore[reportPrivateUsage]
         return
 
@@ -126,6 +130,7 @@ def apply_shared_instances(config: Config) -> None:
                 raw = shared_mcp[name]
                 if isinstance(raw, dict):
                     local_mcp[name] = MCPServerConfig.model_validate(cast(dict[str, Any], raw))
+                    inherited_mcp_names.add(name)
         except Exception as exc:  # defensive: never break startup
             warnings.append(f"shared instance {item_id!r}: mcp merge failed: {exc}")
 
@@ -154,11 +159,14 @@ def apply_shared_instances(config: Config) -> None:
                     continue
                 config.agents.profiles.append(AgentProfileConfig.model_validate(entry_obj))
                 local_ids.add(entry_id)
+                inherited_agent_ids.add(entry_id)
         except Exception as exc:
             warnings.append(f"shared instance {item_id!r}: agents merge failed: {exc}")
 
     config._shared_skills_dirs = shared_dirs  # pyright: ignore[reportPrivateUsage]
     config._shared_skill_names = None if shared_names_all else shared_names  # pyright: ignore[reportPrivateUsage]
+    config._shared_agent_ids = inherited_agent_ids  # pyright: ignore[reportPrivateUsage]
+    config._shared_mcp_names = inherited_mcp_names  # pyright: ignore[reportPrivateUsage]
     config._shared_warnings = warnings  # pyright: ignore[reportPrivateUsage]
     for message in warnings:
         logger.warning("sharedInstances: {}", message)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 from pathlib import Path
 from unittest.mock import MagicMock
+from urllib.parse import quote
 
 from nanodesk.webui.ws_http import GatewayHTTPHandler
 
@@ -52,6 +53,35 @@ def test_static_asset_preserves_identity_when_gzip_is_rejected(tmp_path) -> None
     assert "Content-Encoding" not in response.headers
     assert response.headers["Vary"] == "Accept-Encoding"
     assert response.body == source
+
+
+def test_static_asset_serves_percent_encoded_non_ascii_name(tmp_path) -> None:
+    # Bundled agent avatar cards ship with Chinese file names, so browsers
+    # request them percent-encoded. Without decoding, the handler misses the
+    # file and silently falls back to index.html.
+    source = b"\x89PNG\r\n\x1a\n fake"
+    asset = tmp_path / "agent" / "通用助手.png"
+    asset.parent.mkdir()
+    asset.write_bytes(source)
+
+    response = _handler(tmp_path)._serve_static(f"/agent/{quote('通用助手')}.png")
+
+    assert response is not None
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "image/png"
+    assert response.body == source
+
+
+def test_static_asset_rejects_encoded_traversal(tmp_path) -> None:
+    (tmp_path / "secret.txt").write_bytes(b"nope")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_bytes(b"<!doctype html>")
+
+    response = _handler(dist)._serve_static("/%2e%2e/secret.txt")
+
+    assert response is not None
+    assert response.status_code == 403
 
 
 def test_spa_fallback_uses_precompressed_index_without_long_term_cache(tmp_path) -> None:

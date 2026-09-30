@@ -1,8 +1,7 @@
-import { useMemo, useState, type WheelEvent } from "react";
+import { useEffect, useMemo, useState, type WheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Bot, Check, CheckCircle2, ChevronDown, CircleSlash, MessageSquarePlus,
-  Pencil, Plus, RefreshCw, Save, Search, Trash2, Wrench, X,
+  Bot, Check, ChevronDown, Plus, RefreshCw, Save, Search, Trash2, X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,22 +15,20 @@ import {
 } from "@/components/ui/dialog";
 import type { AgentProfileUpdate } from "@/lib/api";
 import type { AgentProfilePayload, AgentSkillPayload, SharedInstancePayload } from "@/lib/types";
-import { AgentIcon } from "@/lib/agent-icon";
-import { agentDescription, DEFAULT_AGENT_ID } from "@/lib/agent-copy";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 interface AgentWorkbenchViewProps {
   agents: AgentProfilePayload[];
-  selectedAgentId: string | null;
-  onSelectAgent: (agentId: string) => void;
-  onStartChat: () => void;
   onRefresh: () => void;
   onSave: (action: "create" | "update" | "delete", profile: AgentProfileUpdate) => Promise<void>;
   modelPresets: Array<{ name: string }>;
   skillCatalog: AgentSkillPayload[];
   sharedInstances?: SharedInstancePayload[];
   sharedWarnings?: string[];
+  /** When set, open the edit dialog for this agent id (e.g. from a contacts panel). */
+  editingAgentId?: string | null;
+  onEditingOpened?: () => void;
 }
 
 type AgentDialogMode = "create" | "edit";
@@ -49,35 +46,6 @@ type AgentDraft = {
 
 function slugify(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
-}
-
-function agentReady(agent: AgentProfilePayload): boolean {
-  return agent.status !== "disabled" && agent.capabilities_ok;
-}
-
-function statusLabel(
-  agent: AgentProfilePayload,
-  t: (key: string, options?: { defaultValue?: string }) => string,
-): string {
-  if (agent.status === "disabled") return t("agents.status.disabled", { defaultValue: "Disabled" });
-  if (!agent.capabilities_ok) return t("agents.status.needsAttention", { defaultValue: "Needs attention" });
-  return t("agents.status.ready", { defaultValue: "Ready" });
-}
-
-function CapabilityPill({ label, ok }: { label: string; ok: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-        ok
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-      )}
-    >
-      {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleSlash className="h-3.5 w-3.5" />}
-      {label}
-    </span>
-  );
 }
 
 function EmptyList({ label }: { label: string }) {
@@ -111,7 +79,39 @@ function emptyDraft(): AgentDraft {
 }
 
 
-const ICON_OPTIONS = ["🤖", "🧠", "✦", "⚡", "🔧", "📚", "🎯", "🛡️", "🌐", "🧪", "💡", "🗂️"];
+/**
+ * Bundled agent avatar cards served from `webui/public/agent`. Each artwork is a
+ * 313x418 card with its own name baked in, so the file name doubles as the
+ * accessible name; `default.png` is the only one without a Chinese file name.
+ */
+const ICON_OPTION_FILES = [
+  "default.png",
+  "通用助手.png",
+  "编程开发.png",
+  "写作创作.png",
+  "数据分析.png",
+  "图像设计.png",
+  "语音助手.png",
+  "翻译.png",
+  "客服支持.png",
+  "安全风控.png",
+];
+
+const ICON_OPTION_LABELS: Record<string, string> = { "default.png": "系统默认" };
+
+function iconOptionSrc(file: string): string {
+  return `/agent/${file}`;
+}
+
+function iconOptionLabel(file: string): string {
+  return ICON_OPTION_LABELS[file] ?? file.replace(/\.png$/, "");
+}
+
+/** Prefer the backend's message, but never render an empty error banner. */
+function saveFailureMessage(reason: unknown, fallback: string): string {
+  const message = reason instanceof Error ? reason.message.trim() : "";
+  return message || fallback;
+}
 
 function MultiSelect({
   label, values, options, onChange, placeholder, searchPlaceholder,
@@ -149,34 +149,43 @@ function MultiSelect({
 
 export function AgentWorkbenchView({
   agents,
-  selectedAgentId,
-  onSelectAgent,
-  onStartChat,
   onRefresh,
   onSave,
   modelPresets,
   skillCatalog,
   sharedInstances = [],
   sharedWarnings = [],
+  editingAgentId = null,
+  onEditingOpened,
 }: AgentWorkbenchViewProps) {
   const { t } = useTranslation();
-  const selected = agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? null;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<AgentDialogMode>("create");
   const [draft, setDraft] = useState<AgentDraft>(emptyDraft());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const openCreate = () => {
     setDraft(emptyDraft());
     setDialogMode("create");
+    setSaveError("");
     setDialogOpen(true);
   };
 
   const openEdit = (agent: AgentProfilePayload) => {
     setDraft(draftFromAgent(agent));
     setDialogMode("edit");
+    setSaveError("");
     setDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!editingAgentId) return;
+    const agent = agents.find((item) => item.id === editingAgentId);
+    if (!agent) return;
+    openEdit(agent);
+    onEditingOpened?.();
+  }, [editingAgentId, agents, onEditingOpened]);
 
   const closeDialog = () => {
     if (saving) return;
@@ -190,6 +199,7 @@ export function AgentWorkbenchView({
     const profileId = dialogMode === "create" ? slugify(draft.name) : draft.id.trim();
     if (!profileId) return;
     setSaving(true);
+    setSaveError("");
     try {
       await onSave(dialogMode === "create" ? "create" : "update", {
         id: profileId,
@@ -203,6 +213,13 @@ export function AgentWorkbenchView({
         tools: [],
       });
       setDialogOpen(false);
+    } catch (reason) {
+      // The mutation is a WebSocket round-trip that can fail for reasons the
+      // form cannot express (unwritable config, rejected profile). Swallowing
+      // it left the dialog open with no feedback at all.
+      setSaveError(saveFailureMessage(reason, t("agents.dialog.saveFailed", {
+        defaultValue: "Could not save the agent profile.",
+      })));
     } finally {
       setSaving(false);
     }
@@ -224,6 +241,10 @@ export function AgentWorkbenchView({
         tools: [],
       });
       setDialogOpen(false);
+    } catch (reason) {
+      setSaveError(saveFailureMessage(reason, t("agents.dialog.deleteFailed", {
+        defaultValue: "Could not delete the agent profile.",
+      })));
     } finally {
       setSaving(false);
     }
@@ -236,13 +257,13 @@ export function AgentWorkbenchView({
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <Bot className="h-4 w-4" />
-              {t("agents.workbench.eyebrow", { defaultValue: "Agent Workbench" })}
+               {t("agents.workbench.eyebrow", { defaultValue: "Agent 工作台" })}
             </div>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-              {t("agents.workbench.title", { defaultValue: "Agents" })}
+              {t("agents.workbench.title", { defaultValue: "Agent 联系人" })}
             </h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              {t("agents.workbench.subtitle", { defaultValue: "Choose an agent profile, inspect its prompt bindings and capabilities, then start a chat with that profile." })}
+              {t("agents.workbench.subtitle", { defaultValue: "选择团队共享或个人定制的 Agent，查看能力组成并开始任务。" })}
             </p>
           </div>
           <div className="flex gap-2">
@@ -258,132 +279,26 @@ export function AgentWorkbenchView({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-        <div className="mx-auto grid w-full max-w-7xl gap-5 lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)]">
-          <aside className="min-w-0 rounded-panel border border-border/55 bg-settings-surface p-2">
-            <div className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              {t("agents.workbench.listTitle", { defaultValue: "Agent List" })}
-            </div>
-            <div className="space-y-1">
-              {agents.length ? agents.map((agent) => {
-                const active = selected?.id === agent.id;
-                const ready = agentReady(agent);
-                return (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    onClick={() => onSelectAgent(agent.id)}
-                    className={cn(
-                      "flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
-                      active ? "bg-muted/65 ring-1 ring-border/70" : "hover:bg-muted/35",
-                    )}
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-base text-primary">
-                      <AgentIcon icon={agent.icon} imageClassName="h-6 w-6 rounded-md" fallbackClassName="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-sm font-semibold text-foreground">{agent.name}</span>
-                        <span className={cn("h-2 w-2 shrink-0 rounded-full", ready ? "bg-emerald-500" : "bg-amber-500")} />
-                      </span>
-                      <span className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {agentDescription(agent, t)}
-                      </span>
-                    </span>
-                  </button>
-                );
-              }) : <EmptyList label={t("agents.workbench.empty", { defaultValue: "No agents are configured." })} />}
-            </div>
-          </aside>
-
-          <main className="min-w-0 rounded-panel border border-border/55 bg-settings-surface">
-            {selected ? (
-              <div className="flex min-h-full flex-col">
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/55 p-5 sm:p-6">
-                  <div className="flex min-w-0 items-start gap-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-panel border border-primary/15 bg-primary/10 text-2xl text-primary">
-                      <AgentIcon icon={selected.icon} imageClassName="h-9 w-9 rounded-lg" fallbackClassName="h-6 w-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-xl font-semibold text-foreground">{selected.name}</h2>
-                        <CapabilityPill label={statusLabel(selected, t)} ok={agentReady(selected)} />
-                      </div>
-                      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                        {agentDescription(selected, t)}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                        <span>
-                          <span className="font-medium">{t("agents.profile.agentId", { defaultValue: "Agent ID" })}:</span>{" "}
-                          <code className="rounded bg-muted px-1 py-0.5 font-mono">{selected.id}</code>
-                        </span>
-                        <span>
-                          <span className="font-medium">{t("agents.profile.modelPreset", { defaultValue: "Model Preset" })}:</span>{" "}
-                          {selected.model_preset || t("agents.fields.default", { defaultValue: "Default" })}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {selected.id !== DEFAULT_AGENT_ID ? (
-                    <Button type="button" variant="outline" onClick={() => openEdit(selected)} className="gap-2 shrink-0 rounded-control">
-                      <Pencil className="h-4 w-4" />
-                      {t("agents.actions.edit", { defaultValue: "Edit" })}
-                    </Button>
-                  ) : null}
-                  <Button type="button" onClick={onStartChat} disabled={!agentReady(selected)} className="gap-2 shrink-0 rounded-control">
-                    <MessageSquarePlus className="h-4 w-4" />
-                    {t("agents.newChat", { defaultValue: "New Chat With Agent" })}
-                  </Button>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 py-14 text-center sm:py-20">
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Bot className="h-8 w-8" aria-hidden />
+              </span>
+              <h2 className="mt-4 text-lg font-semibold text-foreground">
+                {t("agents.workbench.title", { defaultValue: "Agent 联系人" })}
+              </h2>
+              <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground">
+                {t("agents.workbench.hint", { defaultValue: "在左侧选择联系人即可开始对话，点右侧图标查看 Agent 详情。" })}
+              </p>
+              {!agents.length ? (
+                <div className="mt-6 w-full">
+                  <EmptyList label={t("agents.noProfile", { defaultValue: "No agent profile is available." })} />
                 </div>
-
-                <div className="space-y-6 p-5 sm:p-6">
-                  <section>
-                    <h3 className="text-sm font-semibold text-foreground">{t("agents.skills.title", { defaultValue: "Skills" })}</h3>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {selected.skills.length ? selected.skills.map((skill) => (
-                        <span key={skill} className="rounded-control border border-border/45 bg-muted/55 px-2.5 py-1 text-xs font-medium text-foreground">
-                          {skill}
-                        </span>
-                      )) : <EmptyList label={t("agents.skills.empty", { defaultValue: "This agent does not bind extra skills." })} />}
-                    </div>
-                    {(selected.missing_skills.length || selected.disabled_skills.length) ? (
-                      <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
-                        {selected.missing_skills.length ? <div>{t("agents.skills.missing", { names: selected.missing_skills.join(", "), defaultValue: "Missing skills: {{names}}" })}</div> : null}
-                        {selected.disabled_skills.length ? <div>{t("agents.skills.disabled", { names: selected.disabled_skills.join(", "), defaultValue: "Disabled skills: {{names}}" })}</div> : null}
-                      </div>
-                    ) : null}
-                  </section>
-
-                  <section>
-                    <h3 className="text-sm font-semibold text-foreground">{t("agents.tools.title", { defaultValue: "Tools" })}</h3>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {selected.tools.length ? selected.tools.map((tool) => (
-                        <div key={tool.name} className="rounded-control border border-border/55 bg-muted/20 p-3">
-                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <Wrench className="h-4 w-4 text-muted-foreground" />
-                            <span className="truncate">{tool.name}</span>
-                          </div>
-                          {tool.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{tool.description}</p> : null}
-                        </div>
-                      )) : <EmptyList label={t("agents.tools.empty", { defaultValue: "This agent does not bind extra tools." })} />}
-                    </div>
-                    {selected.missing_tools.length ? (
-                      <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
-                        {t("agents.tools.missing", { names: selected.missing_tools.join(", "), defaultValue: "Missing tools: {{names}}" })}
-                      </div>
-                    ) : null}
-                  </section>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6">
-                <EmptyList label={t("agents.noProfile", { defaultValue: "No agent profile is available." })} />
-              </div>
-            )}
-          </main>
-        </div>
+              ) : null}
+            </div>
         {sharedInstances.length || sharedWarnings.length ? (
-          <div className="mx-auto mt-5 w-full max-w-7xl rounded-panel border border-border/55 bg-settings-surface p-5 sm:p-6">
+          <div className="mx-auto w-full max-w-3xl px-4 pb-10 sm:px-8">
+            <div className="rounded-panel border border-border/55 bg-settings-surface p-5 sm:p-6">
             <h3 className="text-sm font-semibold text-foreground">
               {t("agents.shared.title", { defaultValue: "Shared instances" })}
             </h3>
@@ -417,10 +332,10 @@ export function AgentWorkbenchView({
                 </div>
               ))}
             </div>
+            </div>
           </div>
         ) : null}
       </div>
-
       <Dialog open={dialogOpen} onOpenChange={(next) => { if (!next) closeDialog(); }}>
         <DialogContent className="max-h-[min(80vh,46rem)] max-w-2xl overflow-y-auto">
           <DialogHeader className="text-left">
@@ -441,7 +356,7 @@ export function AgentWorkbenchView({
               <div><h3 className="text-sm font-semibold text-foreground">{t("agents.sections.basic", { defaultValue: "Basic information" })}</h3><p className="text-xs text-muted-foreground">{t("agents.sections.basicHint", { defaultValue: "Give this agent a clear identity." })}</p></div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs font-medium text-muted-foreground">{t("agents.fields.name", { defaultValue: "Name" })}<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="mt-1 block h-10 w-full rounded-control border border-border/60 bg-background px-3 text-sm text-foreground" /></label>
-                <div className="sm:col-span-2"><div className="text-xs font-medium text-muted-foreground">{t("agents.fields.icon", { defaultValue: "Icon" })}</div><div className="mt-1 flex flex-wrap gap-2">{ICON_OPTIONS.map((icon) => <button key={icon} type="button" aria-label={icon} onClick={() => setDraft({ ...draft, icon })} className={cn("flex h-9 w-9 items-center justify-center rounded-control border text-lg", draft.icon === icon ? "border-primary/40 bg-primary/10 ring-2 ring-primary/15" : "border-border/60 hover:bg-muted/55")}>{icon}</button>)}</div></div>
+                <div className="sm:col-span-2"><div className="text-xs font-medium text-muted-foreground">{t("agents.fields.icon", { defaultValue: "Icon" })}</div><div className="mt-1 flex flex-wrap gap-2">{ICON_OPTION_FILES.map((file) => { const src = iconOptionSrc(file); return <button key={file} type="button" aria-label={iconOptionLabel(file)} aria-pressed={draft.icon === src} onClick={() => setDraft({ ...draft, icon: src })} className={cn("h-[4.5rem] w-[3.375rem] overflow-hidden rounded-control border transition-colors", draft.icon === src ? "border-primary/40 bg-primary/10 ring-2 ring-primary/15" : "border-border/60 hover:bg-muted/55")}><img src={src} alt="" aria-hidden className="h-full w-full object-cover" /></button>; })}</div></div>
                 <label className="text-xs font-medium text-muted-foreground sm:col-span-2">{t("agents.fields.description", { defaultValue: "Description" })}<input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="mt-1 block h-10 w-full rounded-control border border-border/60 bg-background px-3 text-sm text-foreground" /></label>
               </div>
             </section>
@@ -454,6 +369,15 @@ export function AgentWorkbenchView({
               <MultiSelect label={t("agents.fields.skills", { defaultValue: "Skills" })} values={draft.skills} options={skillCatalog} onChange={(skills) => setDraft({ ...draft, skills })} placeholder={t("agents.fields.selectSkills", { defaultValue: "Select skills" })} searchPlaceholder={t("agents.fields.searchSkills", { defaultValue: "Search skills..." })} />
             </section>
           </div>
+
+          {saveError ? (
+            <div
+              role="alert"
+              className="rounded-control bg-destructive/10 px-3 py-2.5 text-[13px] leading-5 text-destructive"
+            >
+              {saveError}
+            </div>
+          ) : null}
 
           <DialogFooter>
             {dialogMode === "edit" ? (

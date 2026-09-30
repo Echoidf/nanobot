@@ -12,6 +12,7 @@ import { Eye, EyeOff, Moon, PanelLeft, ShieldCheck, Sun, X } from "lucide-react"
 import { useTranslation } from "react-i18next";
 import { channelUiPresentation } from "@/channel-plugins/registry";
 import { AgentWorkbenchView } from "@/components/agents/AgentWorkbenchView";
+import { AgentHistoryStrip } from "@/components/agents/AgentHistoryStrip";
 import { Sidebar } from "@/components/Sidebar";
 import type { SidebarDeleteItem } from "@/components/ChatList";
 import type { SettingsSectionKey } from "@/components/settings/SettingsView";
@@ -122,7 +123,7 @@ const TOKEN_REFRESH_MIN_DELAY_MS = 5_000;
 const PAIRING_POLL_INTERVAL_MS = 5_000;
 const PAIRING_IDLE_POLL_INTERVAL_MS = 15_000;
 const PAIRING_DISMISS_SNOOZE_MS = 30_000;
-type ShellView = "chat" | "settings" | "apps" | "automations" | "skills" | "agents" | "mcp";
+type ShellView = "chat" | "settings" | "apps" | "automations" | "skills" | "agents" | "mcp" | "assets";
 type ShellRoute = {
   view: ShellView;
   activeKey: string | null;
@@ -143,6 +144,10 @@ const loadMcpServersView = () => import("@/components/settings/mcp/McpServersVie
 const McpServersView = lazy(async () => {
   const module = await loadMcpServersView();
   return { default: module.McpServersView };
+});
+const AssetsWorkbenchView = lazy(async () => {
+  const module = await import("@/components/assets/AssetsWorkbenchView");
+  return { default: module.AssetsWorkbenchView };
 });
 const DeleteConfirm = lazy(async () => {
   const module = await import("@/components/DeleteConfirm");
@@ -241,7 +246,10 @@ function readShellRoute(): ShellRoute {
     ? window.location.hash.slice(1)
     : window.location.hash;
   const hash = maybeRestoreRestartHash(currentHash);
-  if (!hash || hash === "/" || hash === "/new") return defaultShellRoute();
+  if (!hash || hash === "/") {
+    return { view: "agents", activeKey: null, settingsSection: "overview" };
+  }
+  if (hash === "/new") return defaultShellRoute();
 
   const [path, query = ""] = hash.split("?", 2);
   const params = new URLSearchParams(query);
@@ -274,6 +282,9 @@ function readShellRoute(): ShellRoute {
       settingsSection: "overview",
       agentId: params.get("agent")?.trim() || null,
     };
+  }
+  if (path === "/assets") {
+    return { view: "assets", activeKey, settingsSection: "overview" };
   }
   if (path === "/mcp") {
     return { view: "mcp", activeKey, settingsSection: "mcp" };
@@ -1379,11 +1390,14 @@ function Shell({
     ?? agentById.get(defaultAgentId)
     ?? agents[0]
     ?? null;
-  const selectAgent = useCallback((agentId: string) => {
+  const touchAgentSelection = useCallback((agentId: string) => {
     setDraftAgentId(agentId);
-    navigate({ view: "agents", activeKey, settingsSection: "overview", agentId });
-    setTemporaryChatEnabled(false);
-    setSessionSearchOpen(false);
+  }, []);
+
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const openAgentEditor = useCallback((agent: { id: string }) => {
+    setEditingAgentId(agent.id);
+    navigate({ view: "agents", activeKey, settingsSection: "overview", agentId: agent.id });
     setMobileSidebarOpen(false);
   }, [activeKey, navigate]);
 
@@ -1780,7 +1794,7 @@ function Shell({
     )
       ? normalizeWorkspaceScope(activeWorkspaceScope)
       : null;
-    navigate(defaultShellRoute());
+    navigate({ view: "chat", activeKey: null, settingsSection: "overview" });
     setTemporaryChatEnabled(false);
     setDraftWorkspaceScope(scopeToKeep);
     setWorkspaceError(null);
@@ -2162,7 +2176,13 @@ function Shell({
 
   const onOpenSkills = useCallback(() => {
     setSessionSearchOpen(false);
-    navigate({ view: "skills", activeKey, settingsSection: "skills" });
+    navigate({ view: "assets", activeKey, settingsSection: "overview" });
+    setMobileSidebarOpen(false);
+  }, [activeKey, navigate]);
+
+  const onOpenAssets = useCallback(() => {
+    setSessionSearchOpen(false);
+    navigate({ view: "assets", activeKey, settingsSection: "overview" });
     setMobileSidebarOpen(false);
   }, [activeKey, navigate]);
 
@@ -2699,6 +2719,10 @@ function Shell({
       document.title = `${t("sidebar.agents", { defaultValue: "Agents" })} · ${brand}`;
       return;
     }
+    if (view === "assets") {
+      document.title = `${t("assets.title", { defaultValue: "Assets" })} · ${brand}`;
+      return;
+    }
     document.title = activeSession ? `${headerTitle} · ${brand}` : brand;
   }, [activeSession, headerTitle, i18n.resolvedLanguage, initialSiteTitle, t, view]);
 
@@ -2721,6 +2745,19 @@ function Shell({
         orderedTab.tabKey === activeTabKey
       ))?.rowKey ?? activeKey
     : activeKey;
+
+  const startFreshAgentChat = useCallback((agentId: string) => {
+    const ordered = [...sidebarTopicSessions].sort((a, b) => {
+      const timeA = Date.parse(a.updatedAt ?? a.createdAt ?? "") || 0;
+      const timeB = Date.parse(b.updatedAt ?? b.createdAt ?? "") || 0;
+      return timeB - timeA;
+    });
+    const last = ordered.find((session) => agentIdForSession(session) === agentId);
+    const scope = last
+      ? (workspaceOverrides[last.chatId] ?? last.workspaceScope ?? null)
+      : null;
+    void onCreateChat(scope, agentId);
+  }, [sidebarTopicSessions, workspaceOverrides, agentIdForSession, onCreateChat]);
 
   const sidebarProps = {
     sessions: sidebarTopicSessions,
@@ -2756,11 +2793,12 @@ function Shell({
     onOpenAutomations,
     onOpenAgents,
     onOpenSkills,
+    onOpenAssets,
     onOpenMcp,
     onMcpIntent,
     onSettingsIntent,
     onOpenSearch: onOpenSessionSearch,
-    activeUtility: view === "apps" || view === "automations" || view === "skills" || view === "agents" || view === "mcp" ? view : null,
+    activeUtility: (view === "assets" || view === "apps" || view === "automations" || view === "skills" || view === "agents" || view === "mcp") ? view : null,
     onToggleArchived,
     pinnedKeys: sidebarPinnedTabKeys,
     archivedKeys: sidebarArchivedTabKeys,
@@ -2778,7 +2816,18 @@ function Shell({
     archivedCount: sidebarArchivedTabKeys.length,
     defaultWorkspacePath: workspaces?.default_scope.project_path ?? null,
     siteTitle: (initialSiteTitle ?? "").trim() || null,
+    agents,
+    teamAgentIds: agentsPayload?.shared_agent_ids ?? [],
+    defaultAgentId: agentsPayload?.default_agent_id ?? "default",
+    selectedAgentId: selectedAgent?.id ?? selectedAgentId,
+    onSelectAgent: touchAgentSelection,
+    onOpenAgentChat: (agentId: string) => void onCreateChat(null, agentId),
+    onNewAgentChat: startFreshAgentChat,
+    onEditAgent: openAgentEditor,
   };
+  const stripActiveKey = view === "chat"
+    ? (temporaryChatActive ? activeKey : activeSidebarKey)
+    : null;
   const hostSidebarCollapsed = showHostChrome && !hostSidebarOpen;
   const showHostSidebarPreview =
     showMainSidebar && hostSidebarCollapsed && hostSidebarPreviewOpen;
@@ -2931,6 +2980,29 @@ function Shell({
                 view !== "chat" && "hidden",
               )}
             >
+              {view === "chat" ? (
+                <AgentHistoryStrip
+                  sessions={sidebarTopicSessions}
+                  temporarySessions={temporarySessionList}
+                  activeKey={stripActiveKey}
+                  runningChatIds={runningChatIdList}
+                  updatedChatIds={updatedChatIdList}
+                  pinnedKeys={sidebarPinnedTabKeys}
+                  archivedKeys={sidebarArchivedTabKeys}
+                  titleOverrides={sidebarState.title_overrides}
+                  projectNameOverrides={sidebarState.project_name_overrides}
+                  hiddenProjectKeys={sidebarState.hidden_project_keys}
+                  sessionOrder={sidebarState.session_order}
+                  showArchived={false}
+                  sort={automaticSidebarSort}
+                  defaultWorkspacePath={workspaces?.default_scope.project_path ?? null}
+                  onSelect={onSelectSidebarItem}
+                  onCloseTemporaryChat={onCloseTemporaryChat}
+                  onRequestRename={onRequestRename}
+                  onRequestDelete={onRequestDelete}
+                />
+              ) : null}
+              <div className="relative flex min-w-0 flex-1 flex-col">
               <PaneWorkbench
                 panes={renderedWorkbenchPanes}
                 activePaneKey={renderedActivePaneKey}
@@ -3063,20 +3135,20 @@ function Shell({
                   );
                 }}
               />
+              </div>
             </div>
             {view === "agents" && (
               <div className="absolute inset-0 flex flex-col">
                 <AgentWorkbenchView
                   agents={agents}
-                  selectedAgentId={selectedAgent?.id ?? selectedAgentId}
-                  onSelectAgent={selectAgent}
-                  onStartChat={() => void onCreateChat(null, selectedAgent?.id ?? selectedAgentId)}
                   onRefresh={() => void refreshAgents()}
                   onSave={saveAgentProfile}
                   modelPresets={settingsSnapshot?.model_presets ?? []}
                   skillCatalog={agentsPayload?.skill_catalog ?? []}
                   sharedInstances={agentsPayload?.shared?.instances ?? []}
                   sharedWarnings={agentsPayload?.shared?.warnings ?? []}
+                  editingAgentId={editingAgentId}
+                  onEditingOpened={() => setEditingAgentId(null)}
                 />
               </div>
             )}
@@ -3092,7 +3164,19 @@ function Shell({
                 </Suspense>
               </div>
             )}
-            {view !== "chat" && view !== "agents" && view !== "mcp" && (
+            {view === "assets" && (
+              <div className="absolute inset-0 flex flex-col">
+                <Suspense fallback={<SurfaceLoadingFallback />}>
+                  <AssetsWorkbenchView
+                    skills={skills}
+                    teamMcpNames={agentsPayload?.shared_mcp_names ?? []}
+                    onRestart={onRestart}
+                    isRestarting={isRestarting}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {view !== "chat" && view !== "agents" && view !== "mcp" && view !== "assets" && (
               <div className="absolute inset-0 flex flex-col">
                 <Suspense fallback={<SurfaceLoadingFallback />}>
                   <SettingsView

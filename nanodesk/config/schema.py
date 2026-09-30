@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -402,6 +403,87 @@ class ApiConfig(Base):
         )
 
 
+class TeamAssetSourceConfig(Base):
+    """One remote team instance this user downloads assets from.
+
+    Only the sidecar's public read surface is reachable over this URL
+    (catalog + fixed-version downloads). Publishing to a remote instance
+    goes through the same host's ``/v1/team/submissions`` endpoint.
+    """
+
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    name: str = Field(default="", max_length=64)
+    base_url: str = Field(
+        default="",
+        max_length=2048,
+        validation_alias=AliasChoices("baseUrl", "base_url"),
+        serialization_alias="baseUrl",
+    )
+    enabled: bool = True
+
+    @field_validator("base_url")
+    @classmethod
+    def _require_http_base_url(cls, value: str) -> str:
+        text = (value or "").strip().rstrip("/")
+        if not text:
+            raise ValueError("team asset source base_url is required")
+        parsed = urlsplit(text)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("team asset source base_url must be an http(s) URL")
+        if parsed.query or parsed.fragment:
+            raise ValueError("team asset source base_url must not carry a query or fragment")
+        return text
+
+
+class TeamAssetsConfig(Base):
+    """Team asset configuration.
+
+    Two independent roles share one section:
+
+    - Publisher: ``enabled`` + ``instance_id`` start the public sidecar that
+      serves this instance's own catalog and accepts submissions.
+    - Consumer: ``sources`` lists remote team instances to browse, download
+      from, and submit to. A pure consumer leaves ``enabled`` off and never
+      needs an ``instance_id``.
+
+    A consumer may always reach a loopback sidecar on the same host. Reaching
+    a team instance on a private network additionally requires its CIDR in
+    ``tools.ssrf_whitelist``, because outbound team requests go through the
+    same SSRF guard as every other fetch.
+    """
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 18791
+    instance_id: str = Field(
+        default="",
+        # Empty is valid while team assets are off, so the pattern must accept
+        # it; _require_identity_when_enabled enforces the "set when on" rule.
+        pattern=r"^[A-Za-z0-9_-]{0,64}$",
+        validation_alias=AliasChoices("instanceId", "instance_id"),
+        serialization_alias="instanceId",
+    )
+    name: str = Field(default="", max_length=64)
+    description: str = Field(default="", max_length=512)
+    sources: list[TeamAssetSourceConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_identity_when_enabled(self) -> "TeamAssetsConfig":
+        if self.enabled and not self.instance_id.strip():
+            raise ValueError("team_assets.instance_id is required when team_assets is enabled")
+        return self
+
+    @field_validator("sources")
+    @classmethod
+    def _unique_source_ids(cls, value: list["TeamAssetSourceConfig"]) -> list["TeamAssetSourceConfig"]:
+        seen: set[str] = set()
+        for source in value:
+            if source.id in seen:
+                raise ValueError(f"duplicate team asset source id: {source.id}")
+            seen.add(source.id)
+        return value
+
+
 class GatewayConfig(Base):
     """Gateway/server configuration."""
 
@@ -494,6 +576,8 @@ class Config(BaseSettings):
     _source_path: Path | None = PrivateAttr(default=None)
     _shared_skills_dirs: list[Path] = PrivateAttr(default_factory=list)
     _shared_skill_names: set[str] | None = PrivateAttr(default=None)
+    _shared_agent_ids: set[str] = PrivateAttr(default_factory=set)
+    _shared_mcp_names: set[str] = PrivateAttr(default_factory=set)
     _shared_warnings: list[str] = PrivateAttr(default_factory=list)
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
@@ -502,6 +586,11 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
+    team_assets: TeamAssetsConfig = Field(
+        default_factory=TeamAssetsConfig,
+        validation_alias=AliasChoices("teamAssets", "team_assets"),
+        serialization_alias="teamAssets",
+    )
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     model_presets: dict[str, ModelPresetConfig] = Field(
         default_factory=dict,

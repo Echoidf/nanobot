@@ -776,6 +776,37 @@ def _run_gateway(
         _print_gateway_health_endpoint(host, health_port)
         async with server:
             await server.serve_forever()
+
+    async def _team_assets_server(runtime_config: Config) -> None:
+        """Public team-asset sidecar: catalog, fixed-version download, submissions."""
+        from aiohttp import web
+
+        from nanodesk.team_assets.server import create_team_assets_app
+        from nanodesk.team_assets.store import TeamAssetStore
+
+        cfg = runtime_config.team_assets
+        store = TeamAssetStore(
+            runtime_config.workspace_path,
+            team_instance_id=cfg.instance_id,
+        )
+        store.ensure_dirs()
+        app = create_team_assets_app(
+            store,
+            instance_id=cfg.instance_id,
+            name=cfg.name,
+            description=cfg.description,
+        )
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, cfg.host, cfg.port)
+        await site.start()
+        console.print(
+            f"[green]✓[/green] Team assets: http://{cfg.host}:{cfg.port}/v1/team/assets"
+        )
+        try:
+            await asyncio.get_running_loop().create_future()
+        finally:
+            await runner.cleanup()
     # Register Dream system job (idempotent on restart)
     from nanodesk.cron.types import CronJob, CronPayload, CronSchedule
     dream_cfg = config.agents.defaults.dream
@@ -903,6 +934,12 @@ def _run_gateway(
                 tasks.append(asyncio.create_task(
                     _health_server(config.gateway.host, port),
                     name="nanodesk-health-server",
+                ))
+            team_assets_cfg = config.team_assets
+            if team_assets_cfg.enabled:
+                tasks.append(asyncio.create_task(
+                    _team_assets_server(config),
+                    name="nanodesk-team-assets",
                 ))
             if open_browser_url:
                 tasks.append(asyncio.create_task(

@@ -257,6 +257,90 @@ export interface LocalSkillsPayload {
   skills: LocalSkillCandidate[];
 }
 
+export type TeamAssetKind = "skill" | "mcp";
+
+export interface TeamPublishedAsset {
+  kind: TeamAssetKind;
+  id: string;
+  version: string;
+  description: string;
+  content_hash: string;
+  created_at: number;
+}
+
+export interface TeamAssetPublisher {
+  enabled: boolean;
+  instance_id: string;
+  name: string;
+  description: string;
+  host: string;
+  port: number;
+  published: { skills: TeamPublishedAsset[]; mcp: TeamPublishedAsset[] };
+}
+
+export interface TeamAssetSource {
+  id: string;
+  name: string;
+  base_url: string;
+  enabled: boolean;
+}
+
+/** One row of a remote team catalog, annotated with local install state. */
+export interface TeamCatalogAsset {
+  id: string;
+  version: string;
+  description: string;
+  content_hash: string;
+  kind: TeamAssetKind;
+  installed: boolean;
+  installed_version: string;
+  upgradable: boolean;
+}
+
+export interface TeamInstalledAsset {
+  kind: TeamAssetKind;
+  id: string;
+  version: string;
+  content_hash: string;
+  team_instance_id: string;
+  source_url: string;
+  description: string;
+  installed_at: number;
+}
+
+export interface TeamSubmission {
+  submission_id: string;
+  asset_type: TeamAssetKind;
+  asset_id: string;
+  version: string;
+  submitter: string;
+  note: string;
+  created_at: number;
+  preview: string;
+}
+
+export interface TeamAssetsPayload {
+  publisher: TeamAssetPublisher;
+  sources: TeamAssetSource[];
+  installed: TeamInstalledAsset[];
+  submissions: TeamSubmission[];
+  last_action?: Record<string, unknown>;
+}
+
+export interface TeamInstanceInfo {
+  instance_id: string;
+  name: string;
+  description: string;
+}
+
+export interface TeamCatalogPayload {
+  source_id: string;
+  source_name: string;
+  instance: TeamInstanceInfo;
+  skills: TeamCatalogAsset[];
+  mcp: TeamCatalogAsset[];
+}
+
 export interface SkillLocalImportPayload extends SkillsPayload {
   last_action: {
     source_path: string;
@@ -420,6 +504,8 @@ export interface AgentsPayload {
   skill_catalog: AgentSkillPayload[];
   tool_catalog: AgentToolPayload[];
   shared?: SharedInstancesPayload;
+  shared_agent_ids?: string[];
+  shared_mcp_names?: string[];
 }
 
 export interface SharedInstancePayload {

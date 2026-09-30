@@ -2,14 +2,11 @@ import {
   type ReactNode,
   type RefObject,
   useRef,
-  useState,
 } from "react";
 import {
-  Archive,
   Brain,
   CalendarClock,
   Menu,
-  Plug,
   Search,
   Settings,
   SquarePen,
@@ -19,10 +16,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
-  ChatList,
   type SidebarDeleteItem,
   type SidebarPaneGroup,
 } from "@/components/ChatList";
+import { AgentContactsPanel } from "@/components/agents/AgentContactsPanel";
 import { ConnectionBadge } from "@/components/ConnectionBadge";
 import {
   SIDEBAR_SELECTION_ACTION_ITEM_CLASS,
@@ -30,6 +27,7 @@ import {
 } from "@/components/SidebarSelectionHighlight";
 import { Button } from "@/components/ui/button";
 import type {
+  AgentProfilePayload,
   ChatSummary,
   SidebarViewState,
 } from "@/lib/types";
@@ -71,10 +69,19 @@ interface SidebarProps {
   onOpenAutomations: () => void;
   onOpenAgents: () => void;
   onOpenMcp: () => void;
+  onOpenAssets?: () => void;
   onMcpIntent?: () => void;
   onSettingsIntent?: () => void;
   onOpenSearch: () => void;
-  activeUtility?: "apps" | "skills" | "automations" | "agents" | "mcp" | null;
+  activeUtility?: "apps" | "skills" | "automations" | "agents" | "mcp" | "assets" | null;
+  agents: AgentProfilePayload[];
+  teamAgentIds?: string[];
+  defaultAgentId?: string;
+  selectedAgentId: string | null;
+  onSelectAgent: (agentId: string) => void;
+  onOpenAgentChat: (agentId: string) => void;
+  onNewAgentChat?: (agentId: string) => void;
+  onEditAgent?: (agent: AgentProfilePayload) => void;
   onToggleArchived: () => void;
   onCollapse: () => void;
   onExpand?: () => void;
@@ -117,8 +124,6 @@ function newChatShortcutLabel(): string {
 
 export function Sidebar(props: SidebarProps) {
   const { t } = useTranslation();
-  const [menuPortalContainer, setMenuPortalContainer] =
-    useState<HTMLElement | null>(null);
   const collapsed = Boolean(props.collapsed);
   const toggleLabel = t("thread.header.toggleSidebar");
   const newChatShortcut = newChatShortcutLabel();
@@ -131,7 +136,6 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <nav
-      ref={props.containActionMenus ? setMenuPortalContainer : undefined}
       aria-label={t("sidebar.navigation")}
       className={cn(
         "flex h-full w-full min-w-0 flex-col border-r border-sidebar-border/70 text-sidebar-foreground",
@@ -195,6 +199,14 @@ export function Sidebar(props: SidebarProps) {
       >
         <SidebarActionButton
           collapsed={collapsed}
+          label={t("sidebar.agents", { defaultValue: "Agents" })}
+          onClick={props.onOpenAgents}
+          active={props.activeUtility === "agents"}
+          selectionRef={activeActionRef}
+          icon={<Bot className="h-4 w-4" />}
+        />
+        <SidebarActionButton
+          collapsed={collapsed}
           label={t("sidebar.newChat")}
           onClick={props.onNewChat}
           active={props.newChatActive}
@@ -211,38 +223,20 @@ export function Sidebar(props: SidebarProps) {
         />
         <SidebarActionButton
           collapsed={collapsed}
+          label={t("sidebar.assets", { defaultValue: "Assets" })}
+          onClick={props.onOpenAssets ?? props.onOpenSkills}
+          active={props.activeUtility === "assets" || props.activeUtility === "skills" || props.activeUtility === "mcp"}
+          selectionRef={activeActionRef}
+          icon={<Brain className="h-4 w-4" />}
+        />
+        <SidebarActionButton
+          collapsed={collapsed}
           label={t("sidebar.apps")}
           onClick={props.onOpenApps}
           onIntent={props.onSettingsIntent}
           active={props.activeUtility === "apps"}
           selectionRef={activeActionRef}
           icon={<Blocks className="h-4 w-4" />}
-        />
-        <SidebarActionButton
-          collapsed={collapsed}
-          label={t("sidebar.skills.title")}
-          onClick={props.onOpenSkills}
-          onIntent={props.onSettingsIntent}
-          active={props.activeUtility === "skills"}
-          selectionRef={activeActionRef}
-          icon={<Brain className="h-4 w-4" />}
-        />
-        <SidebarActionButton
-          collapsed={collapsed}
-          label={t("sidebar.mcp", { defaultValue: "MCP Server" })}
-          onClick={props.onOpenMcp}
-          onIntent={props.onMcpIntent}
-          active={props.activeUtility === "mcp"}
-          selectionRef={activeActionRef}
-          icon={<Plug className="h-4 w-4" />}
-        />
-        <SidebarActionButton
-          collapsed={collapsed}
-          label={t("sidebar.agents", { defaultValue: "Agents" })}
-          onClick={props.onOpenAgents}
-          active={props.activeUtility === "agents"}
-          selectionRef={activeActionRef}
-          icon={<Bot className="h-4 w-4" />}
         />
         <SidebarActionButton
           collapsed={collapsed}
@@ -253,14 +247,6 @@ export function Sidebar(props: SidebarProps) {
           selectionRef={activeActionRef}
           icon={<CalendarClock className="h-4 w-4" />}
         />
-        {props.archivedCount ? (
-          <SidebarActionButton
-            collapsed={collapsed}
-            label={props.showArchived ? t("chat.hideArchived") : t("chat.showArchived")}
-            onClick={props.onToggleArchived}
-            icon={<Archive className="h-4 w-4" />}
-          />
-        ) : null}
       </SidebarSelectionHighlight>
       <div
         className={cn(
@@ -269,52 +255,16 @@ export function Sidebar(props: SidebarProps) {
         )}
       >
         {!collapsed && (
-          <ChatList
-            sessions={props.sessions}
-            temporarySessions={props.temporarySessions}
-            activeKey={props.activeKey}
-            loading={props.loading}
-            emptyLabel={t("chat.noSessions")}
-            onSelect={props.onSelect}
-            onCloseTemporaryChat={props.onCloseTemporaryChat}
-            onRequestDelete={props.onRequestDelete}
-            onRequestDeleteMany={props.onRequestDeleteMany}
-            onTogglePin={props.onTogglePin}
-            onRequestRename={props.onRequestRename}
-            onRequestRenameTab={props.onRequestRenameTab}
-            onToggleArchive={props.onToggleArchive}
-            paneGroups={props.paneGroups}
-            onSelectPane={props.onSelectPane}
-            onCreateTab={props.onCreateTab}
-            onDetachPane={props.onDetachPane}
-            onDissolveTab={props.onDissolveTab}
-            onAttachPane={props.onAttachPane}
-            onToggleGroup={props.onToggleGroup}
-            onRequestRenameProject={props.onRequestRenameProject}
-            onNewChatInProject={props.onNewChatInProject}
-            onRequestRemoveProject={props.onRequestRemoveProject}
-            onRequestDeleteProject={props.onRequestDeleteProject}
-            onRestoreProject={props.onRestoreProject}
-            pinnedKeys={props.pinnedKeys}
-            archivedKeys={props.archivedKeys}
-            pinnedPaneKeys={props.pinnedPaneKeys}
-            archivedPaneKeys={props.archivedPaneKeys}
-            sessionOrder={props.sessionOrder}
-            titleOverrides={props.titleOverrides}
-            projectNameOverrides={props.projectNameOverrides}
-            hiddenProjectKeys={props.hiddenProjectKeys}
-            collapsedGroups={props.collapsedGroups}
-            runningChatIds={props.runningChatIds}
-            updatedChatIds={props.updatedChatIds}
-            density={props.viewState?.density}
-            showPreviews={props.viewState?.show_previews}
-            showTimestamps={props.viewState?.show_timestamps}
-            sort={props.viewState?.sort}
-            showArchived={props.showArchived}
-            defaultWorkspacePath={props.defaultWorkspacePath}
-            actionMenuPortalContainer={
-              props.containActionMenus ? menuPortalContainer : undefined
-            }
+          <AgentContactsPanel
+            agents={props.agents}
+            teamAgentIds={props.teamAgentIds}
+            defaultAgentId={props.defaultAgentId}
+            selectedAgentId={props.selectedAgentId}
+            onSelectAgent={props.onSelectAgent}
+            onOpenChat={props.onOpenAgentChat}
+            onNewChat={props.onNewAgentChat}
+            onEditAgent={props.onEditAgent}
+            className="flex-1"
           />
         )}
       </div>

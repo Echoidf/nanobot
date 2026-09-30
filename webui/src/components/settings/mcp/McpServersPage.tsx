@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils";
 
 interface McpServersPageProps {
   presets: McpPresetInfo[];
+  teamAssetNames?: string[];
+  showAssetOwnership?: boolean;
   loading: boolean;
   /** ``action:name`` key of the row currently busy; one row at a time. */
   actionKey: string | null;
@@ -56,6 +58,8 @@ interface McpServersPageProps {
  */
 export function McpServersPage({
   presets,
+  teamAssetNames = [],
+  showAssetOwnership = false,
   loading,
   actionKey,
   error,
@@ -198,6 +202,8 @@ export function McpServersPage({
             <McpServerCard
               key={preset.name}
               preset={preset}
+              teamAsset={teamAssetNames.includes(preset.name)}
+              showAssetOwnership={showAssetOwnership}
               actionKey={actionKey}
               onToggle={(enabled) => onToggleServer(preset, enabled)}
               onEdit={() => openModal({ mode: "edit", preset })}
@@ -267,6 +273,8 @@ export function McpServersPage({
 
 function McpServerCard({
   preset,
+  teamAsset = false,
+  showAssetOwnership = false,
   actionKey,
   onToggle,
   onEdit,
@@ -276,6 +284,8 @@ function McpServerCard({
   onReconnect,
 }: {
   preset: McpPresetInfo;
+  teamAsset?: boolean;
+  showAssetOwnership?: boolean;
   actionKey: string | null;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
@@ -321,6 +331,11 @@ function McpServerCard({
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground">
               {preset.auth === "oauth" ? "oauth" : preset.transport}
             </span>
+            {showAssetOwnership ? (
+              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", teamAsset ? "bg-sky-500/10 text-sky-700 dark:text-sky-300" : "bg-muted text-muted-foreground")}>
+                {teamAsset ? tx("assets.teamBadge", "Team") : tx("assets.personalBadge", "Personal")}
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 line-clamp-2 text-[12.5px] leading-5 text-muted-foreground">
             {preset.description || preset.connection_summary || tx("settings.mcpServers.noDescription", "No description.")}

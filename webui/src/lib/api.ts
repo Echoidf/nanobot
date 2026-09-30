@@ -45,6 +45,10 @@ import type {
   SkillsTrendingPayload,
   SlashCommand,
   SlashCommandLifecycle,
+  TeamAssetKind,
+  TeamAssetsPayload,
+  TeamCatalogPayload,
+  TeamInstanceInfo,
   TranscriptionSettingsUpdate,
   WebSearchSettingsUpdate,
   WorkspacesPayload,
@@ -505,6 +509,151 @@ export async function deleteSession(
       key,
       ...(options?.deleteAutomations ? { delete_automations: true } : {}),
     },
+  );
+}
+
+export async function fetchTeamAssets(
+  token: string,
+  base: string = "",
+): Promise<TeamAssetsPayload> {
+  return request<TeamAssetsPayload>(
+    `${base}/api/webui/team-assets`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchTeamCatalog(
+  token: string,
+  source: string,
+  base: string = "",
+): Promise<TeamCatalogPayload> {
+  return request<TeamCatalogPayload>(
+    `${base}/api/webui/team-assets/catalog?source=${encodeURIComponent(source)}`,
+    token,
+    undefined,
+    PACKAGE_MUTATION_TIMEOUT_MS,
+  );
+}
+
+/** Resolve a team instance's own id and name from its URL, before binding. */
+export async function probeTeamInstance(
+  transport: WebUIMutationTransport,
+  baseUrl: string,
+): Promise<TeamInstanceInfo> {
+  return mutation<TeamInstanceInfo>(
+    transport,
+    "team.source.probe",
+    { base_url: baseUrl },
+    PACKAGE_MUTATION_TIMEOUT_MS,
+  );
+}
+
+export async function saveTeamAssetSource(
+  transport: WebUIMutationTransport,
+  input: { id?: string; name?: string; base_url: string; enabled?: boolean },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.source.save", {
+    base_url: input.base_url,
+    ...(input.id ? { id: input.id } : {}),
+    ...(input.name ? { name: input.name } : {}),
+    enabled: input.enabled ?? true,
+  });
+}
+
+export async function removeTeamAssetSource(
+  transport: WebUIMutationTransport,
+  id: string,
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.source.remove", { id });
+}
+
+export async function installTeamAsset(
+  transport: WebUIMutationTransport,
+  input: {
+    source_id: string;
+    kind: TeamAssetKind;
+    asset_id: string;
+    version: string;
+    content_hash?: string;
+  },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(
+    transport,
+    "team.install",
+    {
+      source_id: input.source_id,
+      kind: input.kind,
+      asset_id: input.asset_id,
+      version: input.version,
+      ...(input.content_hash ? { content_hash: input.content_hash } : {}),
+    },
+    PACKAGE_MUTATION_TIMEOUT_MS,
+  );
+}
+
+export async function publishTeamAsset(
+  transport: WebUIMutationTransport,
+  input: {
+    kind: TeamAssetKind;
+    asset_id: string;
+    version: string;
+    description?: string;
+  },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.publish", {
+    kind: input.kind,
+    asset_id: input.asset_id,
+    version: input.version,
+    description: input.description ?? "",
+  });
+}
+
+export async function approveTeamSubmission(
+  transport: WebUIMutationTransport,
+  input: { submission_id: string; version?: string; reviewer?: string },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.approve", {
+    submission_id: input.submission_id,
+    version: input.version ?? "",
+    reviewer: input.reviewer ?? "",
+  });
+}
+
+export async function rejectTeamSubmission(
+  transport: WebUIMutationTransport,
+  input: { submission_id: string; reviewer?: string },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.reject", {
+    submission_id: input.submission_id,
+    reviewer: input.reviewer ?? "",
+  });
+}
+
+export async function submitTeamAsset(
+  transport: WebUIMutationTransport,
+  input: {
+    source_id: string;
+    kind: TeamAssetKind;
+    asset_id: string;
+    version: string;
+    submitter: string;
+    note?: string;
+  },
+): Promise<{ last_action: Record<string, unknown> }> {
+  return mutation<{ last_action: Record<string, unknown> }>(
+    transport,
+    "team.submit",
+    {
+      source_id: input.source_id,
+      kind: input.kind,
+      asset_id: input.asset_id,
+      version: input.version,
+      submitter: input.submitter,
+      note: input.note ?? "",
+    },
+    PACKAGE_MUTATION_TIMEOUT_MS,
   );
 }
 

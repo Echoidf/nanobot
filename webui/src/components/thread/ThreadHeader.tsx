@@ -93,7 +93,8 @@ export function ThreadHeader({
             title={agentDescription(agent, t)}
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[13px]">
-              <AgentIcon icon={agent.icon} imageClassName="h-3.5 w-3.5 rounded-[3px]" fallbackClassName="h-3.5 w-3.5" />
+              {/* Too small for the 3:4 card shape, so crop to the artwork's centre instead of letterboxing it. */}
+              <AgentIcon icon={agent.icon} imageClassName="h-3.5 w-3.5 rounded-[3px] object-cover" fallbackClassName="h-3.5 w-3.5" />
             </span>
             <span className="truncate">{agent.name}</span>
           </span>

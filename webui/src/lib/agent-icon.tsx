@@ -16,6 +16,12 @@ export function isImageAgentIcon(icon: string | null | undefined): boolean {
   return IMAGE_ICON_EXTENSION.test(value) || IMAGE_ICON_LOCATION.test(value);
 }
 
+/**
+ * `imageClassName` must pass an explicit `object-fit` when the icon is one of
+ * the bundled 313x418 `/agent/` cards: those are portrait, so a square box
+ * letterboxes them into an unreadable sliver. Pick a 3:4 box and keep the
+ * default, or crop deliberately with `object-cover` at chip sizes.
+ */
 export function AgentIcon({
   icon,
   imageClassName,

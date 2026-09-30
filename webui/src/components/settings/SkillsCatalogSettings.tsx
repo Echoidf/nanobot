@@ -60,9 +60,14 @@ export function SkillsCatalogSettings({ skills }: { skills: SkillSummary[] }) {
   });
   const groupedSkills = [
     {
-      key: "workspace",
-      label: t("settings.skills.customGroup", { defaultValue: "Custom" }),
+      key: "personal",
+      label: t("assets.personal", { defaultValue: "我的资产" }),
       skills: filteredSkills.filter((skill) => skill.source === "workspace"),
+    },
+    {
+      key: "team",
+      label: t("assets.team", { defaultValue: "团队资产" }),
+      skills: filteredSkills.filter((skill) => skill.source === "shared"),
     },
     {
       key: "builtin",
@@ -73,7 +78,7 @@ export function SkillsCatalogSettings({ skills }: { skills: SkillSummary[] }) {
       key: "other",
       label: t("settings.skills.otherGroup", { defaultValue: "Other" }),
       skills: filteredSkills.filter(
-        (skill) => skill.source !== "workspace" && skill.source !== "builtin",
+        (skill) => skill.source !== "workspace" && skill.source !== "shared" && skill.source !== "builtin",
       ),
     },
   ].filter((group) => group.skills.length);

@@ -264,7 +264,6 @@ vi.mock("@/lib/nanodesk-client", async (importOriginal) => {
     canReconcileCanonicalCompletion = () => false;
     getRunTurnId = () => null;
     getGoalState = () => undefined;
-    getTaskState = () => undefined;
     sendMessage = sendMessageSpy;
     newChat = vi.fn();
     newTemporaryChat = newTemporaryChatSpy;
@@ -2170,8 +2169,8 @@ describe("App layout", () => {
     const historyToolbar = screen.getByRole("toolbar", { name: "Projects" });
     fireEvent.click(within(historyToolbar).getByRole("button", { name: "Topics 3" }));
     const panel = await screen.findByTestId("agent-history-panel");
-    const labels = within(panel)
-      .getAllByRole("button")
+    const labels = within(within(panel).getByRole("list"))
+      .getAllByRole("button", { name: /Alpha plan|New topic|Zulu work/ })
       .map((button) => button.textContent?.trim())
       .filter(Boolean);
 

@@ -36,12 +36,19 @@ def test_shared_and_legacy_paths_remain_global() -> None:
     assert get_legacy_sessions_dir() == Path.home() / ".nanodesk" / "sessions"
 
 
-def test_workspace_path_is_explicitly_resolved() -> None:
-    assert get_workspace_path() == Path.home() / ".nanodesk" / "workspace"
+def test_workspace_path_is_explicitly_resolved(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "instance" / "config.json"
+    monkeypatch.setattr("nanodesk.config.paths.get_config_path", lambda: config_file)
+
+    # The default workspace lives beside the config, never in a recomputed ~/.
+    assert get_workspace_path() == config_file.parent / "workspace"
     assert get_workspace_path("~/custom-workspace") == Path.home() / "custom-workspace"
 
 
-def test_is_default_workspace_distinguishes_default_and_custom_paths() -> None:
+def test_is_default_workspace_distinguishes_default_and_custom_paths(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "instance" / "config.json"
+    monkeypatch.setattr("nanodesk.config.paths.get_config_path", lambda: config_file)
+
     assert is_default_workspace(None) is True
-    assert is_default_workspace(Path.home() / ".nanodesk" / "workspace") is True
+    assert is_default_workspace(config_file.parent / "workspace") is True
     assert is_default_workspace("~/custom-workspace") is False

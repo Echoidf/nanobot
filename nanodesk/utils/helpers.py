@@ -17,6 +17,8 @@ from typing import Any, TypeVar, cast, overload
 import tiktoken
 from loguru import logger
 
+from nanodesk.utils.identity import copy_file_owner
+
 _TOOLS_TOKEN_CACHE_MAX_ENTRIES = 64
 _TOOLS_TOKEN_CACHE: dict[int, tuple[tuple[int, ...], dict[bool, int]]] = {}
 _T = TypeVar("_T")
@@ -346,6 +348,14 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def ensure_private_dir(path: Path, mode: int = 0o700) -> Path:
+    """Ensure *path* exists and is readable only by its owner."""
+    path.mkdir(parents=True, exist_ok=True)
+    with suppress(OSError):
+        os.chmod(path, mode)
+    return path
+
+
 def timestamp() -> str:
     """Current ISO timestamp."""
     return datetime.now().isoformat()
@@ -538,14 +548,23 @@ def _cleanup_tool_result_buckets(root: Path, current_bucket: Path) -> None:
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
+    """Write *content* to *path* via a temp file + rename.
+
+    Mode and owner of an existing file are carried over explicitly. A plain
+    ``open(..., "w")`` keeps ownership, but the temp-file rename path creates a
+    fresh inode, which would silently hand a config file written by a
+    privileged process to that process's user.
+    """
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    existing_mode: int | None = None
+    existing_stat: os.stat_result | None = None
     with suppress(OSError):
-        existing_mode = stat.S_IMODE(path.stat().st_mode)
+        existing_stat = path.stat()
+    existing_mode = stat.S_IMODE(existing_stat.st_mode) if existing_stat else None
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             if existing_mode is not None:
                 os.chmod(tmp, existing_mode)
+            copy_file_owner(tmp, existing_stat)
             f.write(content)
             f.flush()
             os.fsync(f.fileno())

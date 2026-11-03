@@ -771,7 +771,6 @@ export function ThreadShell({
     isStreaming,
     runStartedAt,
     goalState,
-    taskState,
     send,
     transcribeAudio,
     stop,
@@ -1555,7 +1554,6 @@ export function ThreadShell({
           onStop={stop}
           onTranscribeAudio={transcribeAudio}
           goalState={currentGoalState}
-           taskState={messagesReady ? taskState : undefined}
           workspaceScope={workspaceScope}
           workspaceSessionKey={chatId ? `websocket:${chatId}` : null}
           workspaceFileRefToken={token}
@@ -1609,7 +1607,6 @@ export function ThreadShell({
           surfaceRef={composerSurfaceRef}
           onTranscribeAudio={transcribeAudio}
           goalState={currentGoalState}
-           taskState={messagesReady ? taskState : undefined}
           workspaceScope={workspaceScope}
           workspaceSessionKey={chatId ? `websocket:${chatId}` : null}
           workspaceFileRefToken={token}

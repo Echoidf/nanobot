@@ -229,11 +229,12 @@ def test_prepare_call_other_tools_keep_generic_object_validation() -> None:
 
     assert tool is not None
     assert params == ["TODO"]
-    assert error == (
+    assert str(error).startswith(
         "Error: Tool 'grep' parameters must be a JSON object, got list. "
         'Use named parameters like tool_name(param1="value1", param2="value2") '
         "matching the tool schema."
     )
+    assert "Received:" in str(error)
 
 
 async def test_registry_rejects_unknown_builtin_tool_parameters(tmp_path) -> None:

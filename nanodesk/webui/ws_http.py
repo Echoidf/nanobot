@@ -142,16 +142,19 @@ from nanodesk.webui.skills_marketplace import (
 from nanodesk.webui.team_assets_api import (
     TeamAssetsError,
     approve_submission,
+    delete_submission_record,
     fetch_team_asset,
     install_fetched_team_asset,
+    install_published_to_local,
     probe_team_instance,
-    publish_team_asset,
+    refresh_team_submitted,
     reject_submission,
     remote_catalog_payload,
     remove_team_asset_source,
     save_team_asset_source,
     submit_local_asset,
     team_assets_payload,
+    unpublish_team_asset,
 )
 from nanodesk.webui.thread_disk import delete_webui_thread
 from nanodesk.webui.transcript import build_webui_thread_response
@@ -177,7 +180,10 @@ _WEBUI_MUTATION_PATHS = {
     "team.source.remove": "/api/webui/team-assets/source/remove",
     "team.source.probe": "/api/webui/team-assets/source/probe",
     "team.install": "/api/webui/team-assets/install",
-    "team.publish": "/api/webui/team-assets/publish",
+    "team.install_local": "/api/webui/team-assets/install-local",
+    "team.unpublish": "/api/webui/team-assets/unpublish",
+    "team.submission.delete": "/api/webui/team-assets/submission/delete",
+    "team.submitted.refresh": "/api/webui/team-assets/submitted/refresh",
     "team.approve": "/api/webui/team-assets/approve",
     "team.reject": "/api/webui/team-assets/reject",
     "team.submit": "/api/webui/team-assets/submit",
@@ -520,7 +526,10 @@ class GatewayHTTPHandler:
             "/api/webui/team-assets/source/remove",
             "/api/webui/team-assets/source/probe",
             "/api/webui/team-assets/install",
-            "/api/webui/team-assets/publish",
+            "/api/webui/team-assets/install-local",
+            "/api/webui/team-assets/unpublish",
+            "/api/webui/team-assets/submission/delete",
+            "/api/webui/team-assets/submitted/refresh",
             "/api/webui/team-assets/approve",
             "/api/webui/team-assets/reject",
             "/api/webui/team-assets/submit",
@@ -1234,8 +1243,14 @@ class GatewayHTTPHandler:
             return self._handle_webui_team_source_remove(connection, request)
         if got == "/api/webui/team-assets/install":
             return await self._handle_webui_team_install(connection, request)
-        if got == "/api/webui/team-assets/publish":
-            return self._handle_webui_team_publish(connection, request)
+        if got == "/api/webui/team-assets/install-local":
+            return await self._handle_webui_team_install_local(connection, request)
+        if got == "/api/webui/team-assets/unpublish":
+            return self._handle_webui_team_unpublish(connection, request)
+        if got == "/api/webui/team-assets/submission/delete":
+            return self._handle_webui_team_submission_delete(connection, request)
+        if got == "/api/webui/team-assets/submitted/refresh":
+            return await self._handle_webui_team_submitted_refresh(connection, request)
         if got == "/api/webui/team-assets/approve":
             return self._handle_webui_team_approve(connection, request)
         if got == "/api/webui/team-assets/reject":
@@ -1864,7 +1879,7 @@ class GatewayHTTPHandler:
             self._apply_skill_state()
         return self._team_assets_response(action)
 
-    def _handle_webui_team_publish(
+    def _handle_webui_team_unpublish(
         self,
         connection: Any,
         request: WsRequest,
@@ -1876,15 +1891,64 @@ class GatewayHTTPHandler:
             return denied
         payload = _mutation_payload(request) or {}
         try:
-            action = publish_team_asset(
-                self.settings.config.load(),
-                kind=str(payload.get("kind", "")),
-                asset_id=str(payload.get("asset_id", "")),
-                version=str(payload.get("version", "")),
-                description=str(payload.get("description", "")),
+            action = self.settings.config.update(
+                lambda config: unpublish_team_asset(
+                    config,
+                    kind=str(payload.get("kind", "")),
+                    asset_id=str(payload.get("asset_id", "")),
+                    version=str(payload.get("version", "")),
+                )
             )
         except TeamAssetsError as exc:
             return _http_error(exc.status, exc.message)
+        return self._team_assets_response(action)
+
+    def _handle_webui_team_submission_delete(
+        self,
+        connection: Any,
+        request: WsRequest,
+    ) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        denied = self._team_mutation_denied(connection, request)
+        if denied is not None:
+            return denied
+        payload = _mutation_payload(request) or {}
+        try:
+            action = delete_submission_record(
+                self.skills_workspace_path,
+                submission_id=str(payload.get("submission_id", "")),
+            )
+        except TeamAssetsError as exc:
+            return _http_error(exc.status, exc.message)
+        return self._team_assets_response(action)
+
+    async def _handle_webui_team_install_local(
+        self,
+        connection: Any,
+        request: WsRequest,
+    ) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        denied = self._team_mutation_denied(connection, request)
+        if denied is not None:
+            return denied
+        if self._skill_install_lock.locked():
+            return _http_error(409, "another skill installation is already in progress")
+        payload = _mutation_payload(request) or {}
+        kind = str(payload.get("kind", ""))
+        asset_id = str(payload.get("asset_id", ""))
+        version = str(payload.get("version", ""))
+        async with self._skill_install_lock:
+            try:
+                action = self.settings.config.update(
+                    lambda config: install_published_to_local(
+                        config, kind=kind, asset_id=asset_id, version=version
+                    )
+                )
+            except TeamAssetsError as exc:
+                return _http_error(exc.status, exc.message)
+            self._apply_skill_state()
         return self._team_assets_response(action)
 
     def _handle_webui_team_approve(self, connection: Any, request: WsRequest) -> Response:
@@ -1922,6 +1986,26 @@ class GatewayHTTPHandler:
             return _http_error(exc.status, exc.message)
         return self._team_assets_response(action)
 
+    async def _handle_webui_team_submitted_refresh(
+        self,
+        connection: Any,
+        request: WsRequest,
+    ) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        denied = self._team_mutation_denied(connection, request)
+        if denied is not None:
+            return denied
+        try:
+            rows = await refresh_team_submitted(self.settings.config.load())
+        except TeamAssetsError as exc:
+            return _http_error(exc.status, exc.message)
+        # Rows carry per-entry check_error, which is not persisted.
+        return _http_json_response({
+            **team_assets_payload(self.settings.config.load(), self.skills_workspace_path),
+            "submitted": rows,
+        })
+
     async def _handle_webui_team_submit(
         self,
         connection: Any,
@@ -1945,7 +2029,7 @@ class GatewayHTTPHandler:
             )
         except TeamAssetsError as exc:
             return _http_error(exc.status, exc.message)
-        return _http_json_response({"last_action": action})
+        return self._team_assets_response(action)
 
     def _handle_webui_skill_detail(self, request: WsRequest, raw_name: str) -> Response:
         if not self.check_api_token(request):

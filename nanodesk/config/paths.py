@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nanodesk.utils.helpers import ensure_dir
+from nanodesk.utils.helpers import ensure_dir, ensure_private_dir
+from nanodesk.utils.identity import effective_home_dir
 
 
 def get_config_path() -> Path:
@@ -18,19 +19,23 @@ def get_config_path() -> Path:
 
 
 def get_data_dir() -> Path:
-    """Return the instance-level runtime data directory."""
-    return ensure_dir(get_config_path().parent)
+    """Return the instance-level runtime data directory.
+
+    Created as ``0700``: the directory holds the API keys (``config.json``),
+    sessions and pairing state, so it must never be group/world readable.
+    """
+    return ensure_private_dir(get_config_path().parent)
 
 
 def get_runtime_subdir(name: str) -> Path:
     """Return a named runtime subdirectory under the instance data dir."""
-    return ensure_dir(get_data_dir() / name)
+    return ensure_private_dir(get_data_dir() / name)
 
 
 def get_media_dir(channel: str | None = None) -> Path:
     """Return the media directory, optionally namespaced per channel."""
     base = get_runtime_subdir("media")
-    return ensure_dir(base / channel) if channel else base
+    return ensure_private_dir(base / channel) if channel else base
 
 
 def get_cron_dir() -> Path:
@@ -49,23 +54,30 @@ def get_webui_dir() -> Path:
 
 
 def get_workspace_path(workspace: str | Path | None = None) -> Path:
-    """Resolve and ensure the agent workspace path."""
-    path = Path(workspace).expanduser() if workspace else Path.home() / ".nanodesk" / "workspace"
-    return ensure_dir(path)
+    """Resolve and ensure the agent workspace path.
+
+    The default workspace lives next to the config file (``<data dir>/workspace``)
+    rather than under a directly computed ``~/`` path, so every instance-level
+    file shares one root that belongs to the process's effective user.
+    """
+    if workspace:
+        return ensure_dir(Path(workspace).expanduser())
+    return ensure_dir(get_data_dir() / "workspace")
 
 
 def is_default_workspace(workspace: str | Path | None) -> bool:
     """Return whether a workspace resolves to nanodesk's default workspace path."""
-    current = Path(workspace).expanduser() if workspace is not None else Path.home() / ".nanodesk" / "workspace"
-    default = Path.home() / ".nanodesk" / "workspace"
-    return current.resolve(strict=False) == default.resolve(strict=False)
+    if workspace is None or not str(workspace).strip():
+        return True
+    default = get_data_dir() / "workspace"
+    return Path(workspace).expanduser().resolve(strict=False) == default.resolve(strict=False)
 
 
 def get_cli_history_path() -> Path:
     """Return the shared CLI history file path."""
-    return Path.home() / ".nanodesk" / "history" / "cli_history"
+    return effective_home_dir() / ".nanodesk" / "history" / "cli_history"
 
 
 def get_legacy_sessions_dir() -> Path:
     """Return the legacy global session directory used for migration fallback."""
-    return Path.home() / ".nanodesk" / "sessions"
+    return effective_home_dir() / ".nanodesk" / "sessions"

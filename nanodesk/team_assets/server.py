@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import time
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any, cast
 
 from aiohttp import web
@@ -27,7 +28,17 @@ from nanodesk.team_assets.bundles import (
     sanitize_mcp_manifest,
     validate_skill_markdown,
 )
-from nanodesk.team_assets.store import TeamAssetStore, normalize_asset_id
+from nanodesk.team_assets.live import (
+    find_live_row,
+    load_live_mcp_manifest,
+    load_live_skill_markdown,
+    merged_catalog_rows,
+)
+from nanodesk.team_assets.store import (
+    TeamAssetStore,
+    normalize_asset_id,
+    normalize_submission_id,
+)
 
 MAX_SUBMISSION_BYTES = 64 * 1024
 GET_RATE_LIMIT = 60
@@ -90,8 +101,17 @@ def create_team_assets_app(
     instance_id: str,
     name: str = "",
     description: str = "",
+    config_path: Path | str,
+    workspace_path: Path | str,
 ) -> web.Application:
-    """Build the public sidecar app bound to one team instance identity."""
+    """Build the public sidecar app bound to one team instance identity.
+
+    The catalog is assembled live on every request: local skills/MCP
+    servers appear as ``origin == "local"`` rows with content-derived
+    versions, alongside approved fixed-version snapshots. The config is
+    reloaded per request so WebUI edits show up immediately; when it
+    cannot be loaded the sidecar degrades to fixed snapshots only.
+    """
     identity = instance_id.strip()
     if not identity:
         raise ValueError("instance_id is required")
@@ -100,6 +120,50 @@ def create_team_assets_app(
     app["team_instance_id"] = identity
     app["team_name"] = name.strip()[:64]
     app["team_description"] = description.strip()[:512]
+    live_workspace = Path(workspace_path).expanduser()
+    live_config_path = Path(config_path).expanduser()
+
+    def _live_config() -> Any | None:
+        try:
+            from nanodesk.config.loader import load_config
+
+            return load_config(live_config_path)
+        except Exception as exc:  # never break the catalog on config errors
+            logger.warning("team asset live catalog unavailable: {}", exc)
+            return None
+
+    def _published_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        skills = [
+            {
+                "id": asset.asset_id,
+                "version": asset.version,
+                "description": asset.description,
+                "content_hash": asset.content_hash,
+                "origin": asset.origin or "local",
+                "enabled": True,
+            }
+            for asset in store.list_published("skill")
+        ]
+        mcp = [
+            {
+                "id": asset.asset_id,
+                "version": asset.version,
+                "description": asset.description,
+                "content_hash": asset.content_hash,
+                "origin": asset.origin or "local",
+                "enabled": True,
+            }
+            for asset in store.list_published("mcp")
+        ]
+        return skills, mcp
+
+    def _merged_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Return merged (skills, mcp) rows, live local first."""
+        config = _live_config()
+        if config is None:
+            return _published_rows()
+        merged = merged_catalog_rows(live_workspace, config, team_instance_id=identity)
+        return merged["skills"], merged["mcp"]
 
     async def handle_health(_request: web.Request) -> web.Response:
         return _json({"status": "ok"})
@@ -118,24 +182,7 @@ def create_team_assets_app(
             request, limit=GET_RATE_LIMIT, window_s=GET_RATE_WINDOW_S
         ):
             return _error(429, "rate limited")
-        skills = [
-            {
-                "id": asset.asset_id,
-                "version": asset.version,
-                "description": asset.description,
-                "content_hash": asset.content_hash,
-            }
-            for asset in store.list_published("skill")
-        ]
-        mcp = [
-            {
-                "id": asset.asset_id,
-                "version": asset.version,
-                "description": asset.description,
-                "content_hash": asset.content_hash,
-            }
-            for asset in store.list_published("mcp")
-        ]
+        skills, mcp = _merged_rows()
         return _json({"instance_id": identity, "skills": skills, "mcp": mcp})
 
     async def handle_download(request: web.Request) -> web.Response:
@@ -161,10 +208,65 @@ def create_team_assets_app(
                 "skill" if kind == "skill" else "mcp", asset_id, version
             )
         except FileNotFoundError:
-            return _error(404, "asset version not found")
+            payload = None
         except ValueError as exc:
             logger.warning("team asset integrity failure: {}", exc)
             return _error(500, "asset integrity check failed")
+        if payload is None:
+            # No fixed-version snapshot: fall back to the live asset when
+            # the requested version still matches its current content.
+            # A mismatch means the asset changed (or was removed) after
+            # the consumer listed the catalog.
+            config = _live_config()
+            if config is None:
+                return _error(404, "asset version not found")
+            row = find_live_row(
+                live_workspace,
+                config,
+                kind="skill" if kind == "skill" else "mcp",
+                asset_id=asset_id,
+            )
+            if row is None or row["version"] != version:
+                return _error(404, "asset changed or was unpublished; reload the catalog")
+            if kind == "skill":
+                skill_markdown = load_live_skill_markdown(live_workspace, asset_id)
+                if skill_markdown is None:
+                    return _error(404, "asset changed or was unpublished; reload the catalog")
+                try:
+                    bundle = build_skill_bundle(
+                        team_instance_id=identity,
+                        skill_id=asset_id,
+                        version=version,
+                        skill_markdown=skill_markdown,
+                    )
+                except ValueError as exc:
+                    logger.warning("team asset live skill invalid: {}", exc)
+                    return _error(500, "asset integrity check failed")
+                return web.Response(
+                    body=bundle,
+                    content_type="application/zip",
+                    headers={
+                        **_cors_headers(),
+                        "Content-Disposition": (
+                            f"attachment; filename={asset_id}-{version}.zip"
+                        ),
+                    },
+                )
+            manifest = load_live_mcp_manifest(config, asset_id)
+            if manifest is None:
+                return _error(404, "asset changed or was unpublished; reload the catalog")
+            try:
+                return _json(
+                    build_mcp_manifest_envelope(
+                        team_instance_id=identity,
+                        name=asset_id,
+                        version=version,
+                        manifest=manifest,
+                    )
+                )
+            except ValueError as exc:
+                logger.warning("team asset live mcp invalid: {}", exc)
+                return _error(500, "asset integrity check failed")
         if kind == "skill":
             bundle = build_skill_bundle(
                 team_instance_id=identity,
@@ -190,6 +292,35 @@ def create_team_assets_app(
             manifest=manifest,
         )
         return _json(envelope)
+
+    async def handle_submission_status(request: web.Request) -> web.Response:
+        """Return one submission's review state to whoever holds its id.
+
+        The id is a random 16-hex token, so this is not enumerable; the
+        response deliberately omits content, manifest and notes — only
+        the asset identity and review state leave the instance.
+        """
+        if not _check_rate(
+            request, limit=GET_RATE_LIMIT, window_s=GET_RATE_WINDOW_S
+        ):
+            return _error(429, "rate limited")
+        try:
+            submission_id = normalize_submission_id(
+                request.match_info.get("submission_id", "")
+            )
+            record = store.get_pending(submission_id)
+        except (ValueError, FileNotFoundError):
+            return _error(404, "submission not found")
+        return _json(
+            {
+                "submission_id": submission_id,
+                "status": record.get("status", "pending"),
+                "asset_type": record.get("asset_type", ""),
+                "id": record.get("id", ""),
+                "version": record.get("version", ""),
+                "reviewed_at": record.get("reviewed_at", 0.0),
+            }
+        )
 
     async def handle_submit(request: web.Request) -> web.Response:
         if not _check_rate(
@@ -281,6 +412,7 @@ def create_team_assets_app(
         "OPTIONS", "/v1/team/assets/{kind}/{asset_id}/{version}/download",
         _preflight,
     )
+    app.router.add_get("/v1/team/submissions/{submission_id}", handle_submission_status)
     app.router.add_post("/v1/team/submissions", handle_submit)
     app.router.add_route("OPTIONS", "/v1/team/submissions", _preflight)
     return app

@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import os
 import time
+import uuid
 from collections.abc import Awaitable, Callable, Iterable
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -50,13 +51,20 @@ from nanodesk.utils.helpers import (
 from nanodesk.utils.llm_runtime import LLMRuntime
 from nanodesk.utils.prompt_templates import render_template
 from nanodesk.utils.runtime import (
+    _MAX_REPEAT_ASSISTANT_MESSAGES,
+    _MAX_STUCK_NUDGES_PER_TURN,
     EMPTY_FINAL_RESPONSE_MESSAGE,
     build_budget_exhausted_finalization_message,
     build_finalization_retry_message,
     build_goal_continue_message,
     build_length_recovery_message,
+    build_stuck_loop_nudge_message,
     is_blank_text,
+    normalize_assistant_fingerprint,
+    record_tool_error,
     repeated_external_lookup_error,
+    repeated_identical_tool_call_error,
+    repeated_tool_error,
     repeated_workspace_violation_error,
 )
 
@@ -142,6 +150,8 @@ class AgentRunResult:
     # Terminal tail to emit when the preceding final-content prefix was already streamed.
     pending_stream_content: str | None = None
     provider_state: ProviderConversationState | None = field(default=None, repr=False)
+    # Suspended user-input request (Codex request_user_input semantics).
+    pending_input_request: dict[str, Any] | None = None
 
 
 class AgentRunner:
@@ -441,6 +451,12 @@ class AgentRunner:
         external_lookup_counts: dict[str, int] = {}
         # Per-turn throttle for repeated attempts against the same outside target.
         workspace_violation_counts: dict[str, int] = {}
+        identical_tool_counts: dict[str, int] = {}
+        tool_error_counts: dict[str, int] = {}
+        pending_input_request: dict[str, Any] | None = None
+        prev_fingerprint: str | None = None
+        repeat_count = 0
+        stuck_nudges = 0
         empty_content_retries = 0
         # Segments from one uninterrupted length-recovery chain. Tool work or
         # injected user input starts a new logical answer and clears the chain.
@@ -509,6 +525,13 @@ class AgentRunner:
                 response.content,
             )
             response.content = cleaned_content
+            fingerprint = normalize_assistant_fingerprint(cleaned_content, response.tool_calls)
+            if fingerprint == prev_fingerprint:
+                repeat_count += 1
+            else:
+                prev_fingerprint = fingerprint
+                repeat_count = 1
+            is_repeat_loop = repeat_count > _MAX_REPEAT_ASSISTANT_MESSAGES
             raw_usage = self._usage_or_estimate(spec, messages_for_model, response)
             context.usage = dict(raw_usage)
             self._accumulate_usage(usage, raw_usage)
@@ -521,6 +544,88 @@ class AgentRunner:
                 context.tool_calls = list(response.tool_calls)
                 if hook.wants_streaming():
                     await hook.on_stream_end(context, resuming=True)
+
+                suspend_call = self._suspending_tool_call(spec, response.tool_calls)
+                if suspend_call is not None:
+                    # Codex request_user_input semantics: never execute. Run
+                    # any sibling non-suspending calls, then suspend the turn
+                    # with a plain-text question (no card UI). The next user
+                    # message resumes the same turn as this call's result.
+                    assistant_message = build_assistant_message(
+                        response.content or "",
+                        tool_calls=[tc.to_openai_tool_call() for tc in response.tool_calls],
+                        reasoning_content=response.reasoning_content,
+                        thinking_blocks=response.thinking_blocks,
+                    )
+                    assistant_message = conversation_state.project_response_message(
+                        assistant_message,
+                        response,
+                    )
+                    messages.append(assistant_message)
+                    runnable = [tc for tc in response.tool_calls if tc.id != suspend_call.id]
+                    if runnable:
+                        await hook.before_execute_tools(context)
+                        results, new_events, fatal_error = await self._execute_tools(
+                            spec,
+                            runnable,
+                            external_lookup_counts,
+                            workspace_violation_counts,
+                            hook,
+                            context,
+                            identical_tool_counts,
+                            tool_error_counts,
+                        )
+                        tool_events.extend(new_events)
+                        for tool_call, event in zip(runnable, new_events):
+                            if event.get("status") == "ok":
+                                tools_used.append(tool_call.name)
+                                tool_error_counts.pop(tool_call.name, None)
+                            else:
+                                record_tool_error(tool_call.name, tool_error_counts)
+                        context.tool_results = list(results)
+                        context.tool_events = list(new_events)
+                        for tool_call, result in zip(runnable, results):
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.name,
+                                "content": self.context_governor.normalize_tool_result(
+                                    governance_config,
+                                    tool_call.id,
+                                    tool_call.name,
+                                    result,
+                                ),
+                            })
+                        if fatal_error is not None:
+                            error = f"Error: {type(fatal_error).__name__}: {fatal_error}"
+                            final_content = error
+                            stop_reason = "tool_error"
+                            self._append_final_message(messages, final_content)
+                            context.final_content = final_content
+                            context.error = error
+                            context.stop_reason = stop_reason
+                            await hook.after_iteration(context)
+                            break
+                    question = self._input_request_question(suspend_call)
+                    if not question:
+                        question = (response.content or "").strip() or "(waiting for user input)"
+                    pending_input_request = {
+                        "interaction_id": uuid.uuid4().hex,
+                        "tool_call_id": suspend_call.id,
+                        "tool_name": suspend_call.name,
+                        "question": question,
+                    }
+                    final_content = question
+                    stop_reason = "awaiting_user"
+                    context.final_content = final_content
+                    context.stop_reason = stop_reason
+                    logger.info(
+                        "Suspending turn {} for user input (interaction {})",
+                        spec.session_key or "default",
+                        pending_input_request["interaction_id"][:8],
+                    )
+                    await hook.after_iteration(context)
+                    break
 
                 assistant_message = build_assistant_message(
                     response.content or "",
@@ -554,6 +659,8 @@ class AgentRunner:
                     workspace_violation_counts,
                     hook,
                     context,
+                    identical_tool_counts,
+                    tool_error_counts,
                 )
                 tool_events.extend(new_events)
                 tools_used.extend(
@@ -561,6 +668,11 @@ class AgentRunner:
                     for tool_call, event in zip(response.tool_calls, new_events)
                     if event.get("status") == "ok"
                 )
+                for tool_call, event in zip(response.tool_calls, new_events):
+                    if event.get("status") != "ok":
+                        record_tool_error(tool_call.name, tool_error_counts)
+                    else:
+                        tool_error_counts.pop(tool_call.name, None)
                 context.tool_results = list(results)
                 context.tool_events = list(new_events)
                 completed_tool_results: list[dict[str, Any]] = []
@@ -635,6 +747,17 @@ class AgentRunner:
                     break
                 empty_content_retries = 0
                 length_recovery_parts.clear()
+                if is_repeat_loop and stuck_nudges < _MAX_STUCK_NUDGES_PER_TURN:
+                    stuck_nudges += 1
+                    repeat_count = 0
+                    logger.warning(
+                        "Repetitive tool plan detected on turn {} for {}; nudging ({}/{})",
+                        iteration,
+                        spec.session_key or "default",
+                        stuck_nudges,
+                        _MAX_STUCK_NUDGES_PER_TURN,
+                    )
+                    messages.append(build_stuck_loop_nudge_message(repeat_count or 3))
                 # Checkpoint 1: drain injections after tools, before next LLM call
                 _drained, injection_cycles = await self._try_drain_injections(
                     spec, messages, None, injection_cycles,
@@ -814,6 +937,33 @@ class AgentRunner:
                     continue
                 break
 
+            if is_repeat_loop and stuck_nudges < _MAX_STUCK_NUDGES_PER_TURN:
+                stuck_nudges += 1
+                logger.warning(
+                    "Repetitive final text detected on turn {} for {}; nudging ({}/{})",
+                    iteration,
+                    spec.session_key or "default",
+                    stuck_nudges,
+                    _MAX_STUCK_NUDGES_PER_TURN,
+                )
+                messages.append(
+                    assistant_message
+                    or conversation_state.project_response_message(
+                        build_assistant_message(
+                            clean,
+                            reasoning_content=response.reasoning_content,
+                            thinking_blocks=response.thinking_blocks,
+                        ),
+                        response,
+                    )
+                )
+                messages.append(build_stuck_loop_nudge_message(repeat_count))
+                repeat_count = 0
+                if hook.wants_streaming():
+                    await hook.on_stream_end(context, resuming=True)
+                await hook.after_iteration(context)
+                continue
+
             messages.append(
                 assistant_message
                 or conversation_state.project_response_message(
@@ -893,6 +1043,7 @@ class AgentRunner:
             had_injections=had_injections,
             pending_stream_content=pending_stream_content,
             provider_state=conversation_state.finish(messages),
+            pending_input_request=pending_input_request,
         )
 
     def _build_request_kwargs(
@@ -1449,6 +1600,37 @@ class AgentRunner:
             merged[key] = merged.get(key, 0) + value
         return merged
 
+    @staticmethod
+    def _suspending_tool_call(
+        spec: AgentRunSpec,
+        tool_calls: list[ToolCallRequest],
+    ) -> ToolCallRequest | None:
+        """Return the first turn-suspending call, if any (never executed)."""
+        get_tool = getattr(spec.tools, "get", None)
+        if not callable(get_tool):
+            return None
+        for tool_call in tool_calls:
+            try:
+                tool = get_tool(tool_call.name)
+            except Exception:
+                continue
+            if getattr(tool, "suspends_turn", False) is True:
+                return tool_call
+        return None
+
+    @staticmethod
+    def _input_request_question(tool_call: ToolCallRequest) -> str:
+        args = tool_call.arguments
+        if isinstance(args, dict):
+            question = args.get("question", "")
+            context = args.get("context", "")
+            question_text = str(question or "").strip()
+            context_text = str(context or "").strip() if context else ""
+            if context_text:
+                return f"{context_text}\n\n{question_text}" if question_text else context_text
+            return question_text
+        return ""
+
     async def _execute_tools(
         self,
         spec: AgentRunSpec,
@@ -1457,9 +1639,15 @@ class AgentRunner:
         workspace_violation_counts: dict[str, int],
         hook: AgentHook | None = None,
         context: AgentHookContext | None = None,
+        identical_tool_counts: dict[str, int] | None = None,
+        tool_error_counts: dict[str, int] | None = None,
     ) -> tuple[list[Any], list[dict[str, str]], BaseException | None]:
         hook = hook or AgentHook()
         context = context or AgentHookContext(iteration=0, messages=[])
+        if identical_tool_counts is None:
+            identical_tool_counts = {}
+        if tool_error_counts is None:
+            tool_error_counts = {}
         batches = self._partition_tool_batches(spec, tool_calls)
         tool_results: list[tuple[Any, dict[str, str], BaseException | None]] = []
         for batch in batches:
@@ -1472,6 +1660,8 @@ class AgentRunner:
                         workspace_violation_counts,
                         hook,
                         context,
+                        identical_tool_counts,
+                        tool_error_counts,
                     )
                     for tool_call in batch
                 ))
@@ -1486,6 +1676,8 @@ class AgentRunner:
                         workspace_violation_counts,
                         hook,
                         context,
+                        identical_tool_counts,
+                        tool_error_counts,
                     )
                     tool_results.append(result)
                     batch_results.append(result)
@@ -1508,10 +1700,26 @@ class AgentRunner:
         workspace_violation_counts: dict[str, int],
         hook: AgentHook | None = None,
         context: AgentHookContext | None = None,
+        identical_tool_counts: dict[str, int] | None = None,
+        tool_error_counts: dict[str, int] | None = None,
     ) -> tuple[Any, dict[str, str], BaseException | None]:
         hook = hook or AgentHook()
         context = context or AgentHookContext(iteration=0, messages=[])
+        if identical_tool_counts is None:
+            identical_tool_counts = {}
+        if tool_error_counts is None:
+            tool_error_counts = {}
         hint = "\n\n[Analyze the error above and try a different approach.]"
+        fuse_error = repeated_tool_error(tool_call.name, tool_error_counts)
+        if fuse_error:
+            event = {
+                "name": tool_call.name,
+                "status": "error",
+                "detail": "repeated tool failures fused",
+            }
+            if spec.fail_on_tool_error:
+                return fuse_error + hint, event, RuntimeError(fuse_error)
+            return fuse_error + hint, event, None
         lookup_error = repeated_external_lookup_error(
             tool_call.name,
             tool_call.arguments,
@@ -1526,6 +1734,20 @@ class AgentRunner:
             if spec.fail_on_tool_error:
                 return lookup_error + hint, event, RuntimeError(lookup_error)
             return lookup_error + hint, event, None
+        identical_error = repeated_identical_tool_call_error(
+            tool_call.name,
+            tool_call.arguments,
+            identical_tool_counts,
+        )
+        if identical_error:
+            event = {
+                "name": tool_call.name,
+                "status": "error",
+                "detail": "repeated identical tool call blocked",
+            }
+            if spec.fail_on_tool_error:
+                return identical_error + hint, event, RuntimeError(identical_error)
+            return identical_error + hint, event, None
         prepare_call = cast(
             Callable[[str, Any], object] | None,
             getattr(spec.tools, "prepare_call", None),

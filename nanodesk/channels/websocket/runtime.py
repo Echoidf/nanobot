@@ -34,7 +34,6 @@ from nanodesk.bus.outbound_events import (
     ProgressEvent,
     RuntimeModelUpdatedEvent,
     SessionUpdatedEvent,
-    TaskStateSyncEvent,
     TurnEndEvent,
     TurnModelUpdatedEvent,
     UserInputEvent,
@@ -60,7 +59,6 @@ from nanodesk.session.model_selection import (
     model_selection_mode_from_metadata,
     reasoning_effort_from_metadata,
 )
-from nanodesk.session.task_state import task_state_ws_blob
 from nanodesk.session.webui_turns import (
     clear_websocket_turn_if_current,
     clear_websocket_turns,
@@ -568,9 +566,6 @@ class WebSocketChannel(BaseChannel):
         blob = goal_state_ws_blob(cast(dict[str, Any], meta))
         if blob.get("active") or blob.get("status") == "blocked":
             await self.send_goal_state(chat_id, blob)
-        task_blob = task_state_ws_blob(cast(dict[str, Any], meta))
-        if task_blob.get("active") or task_blob.get("status") == "blocked":
-            await self.send_task_state(chat_id, task_blob)
 
     async def _maybe_push_turn_run_wall_clock(self, chat_id: str) -> None:
         """Replay ``goal_status: running`` when a turn is still active (same-process refresh)."""
@@ -1709,8 +1704,7 @@ class WebSocketChannel(BaseChannel):
                 | TurnEndEvent
                 | SessionUpdatedEvent
                 | GoalStatusEvent
-                | GoalStateSyncEvent
-                | TaskStateSyncEvent,
+                | GoalStateSyncEvent,
             ):
                 self.logger.debug("no active subscribers for chat_id={}", msg.chat_id)
             else:
@@ -1736,10 +1730,6 @@ class WebSocketChannel(BaseChannel):
         if isinstance(event, GoalStateSyncEvent):
             if conns:
                 await self.send_goal_state(msg.chat_id, event.goal_state or {"active": False})
-            return
-        if isinstance(event, TaskStateSyncEvent):
-            if conns:
-                await self.send_task_state(msg.chat_id, event.task_state or {"active": False})
             return
         if isinstance(event, GoalStatusEvent):
             turn_id = (msg.metadata or {}).get(WEBUI_TURN_METADATA_KEY)
@@ -2061,16 +2051,6 @@ class WebSocketChannel(BaseChannel):
         raw = json.dumps(body, ensure_ascii=False)
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" goal_state ")
-
-    async def send_task_state(self, chat_id: str, blob: dict[str, Any]) -> None:
-        """Push the current structured task-list snapshot for *chat_id*."""
-        conns = list(self._subs.get(chat_id, ()))
-        if not conns:
-            return
-        body = {"event": "task_state", "chat_id": chat_id, "task_state": blob}
-        raw = json.dumps(body, ensure_ascii=False)
-        for connection in conns:
-            await self._safe_send_to(connection, raw, label=" task_state ")
 
     async def send_goal_status(
         self,

@@ -37,6 +37,7 @@ __all__ = [
     "PublishedAsset",
     "TeamAssetStore",
     "normalize_asset_id",
+    "normalize_submission_id",
     "normalize_version",
 ]
 
@@ -68,6 +69,14 @@ def normalize_version(raw: str) -> str:
     return value
 
 
+def normalize_submission_id(raw: str) -> str:
+    """Validate a submission id before it is used in a path or URL."""
+    value = (raw or "").strip()
+    if _SUBMISSION_ID_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"invalid submission id: {raw!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class PublishedAsset:
     """Metadata for one fixed published asset version."""
@@ -80,6 +89,11 @@ class PublishedAsset:
     content_hash: str
     team_instance_id: str
     created_at: float
+    # Where the bytes came from: ``"local"`` for a snapshot the owner
+    # published themselves (legacy path), ``"remote"`` for a submission
+    # another instance sent in and a reviewer approved. Metas written
+    # before this field existed read back as ``"local"``.
+    origin: str = "local"
 
 
 class TeamAssetStore:
@@ -113,6 +127,7 @@ class TeamAssetStore:
         version: str,
         skill_markdown: str,
         description: str = "",
+        origin: str = "local",
     ) -> PublishedAsset:
         """Persist one fixed skill version (reviewer path; caller must be authed)."""
         from nanodesk.team_assets.bundles import validate_skill_markdown
@@ -127,6 +142,7 @@ class TeamAssetStore:
             filename="SKILL.md",
             payload=skill_markdown.encode("utf-8"),
             description=description,
+            origin=origin,
         )
 
     def publish_mcp_version(
@@ -135,6 +151,7 @@ class TeamAssetStore:
         name: str,
         version: str,
         manifest: dict[str, Any],
+        origin: str = "local",
     ) -> PublishedAsset:
         """Persist one fixed MCP version after credential stripping (reviewer path)."""
         from nanodesk.team_assets.bundles import mcp_manifest_hash, sanitize_mcp_manifest
@@ -165,8 +182,10 @@ class TeamAssetStore:
         payload: bytes,
         description: str,
         content_hash: str | None = None,
+        origin: str = "local",
     ) -> PublishedAsset:
         self.ensure_dirs()
+        clean_origin = origin.strip() if origin.strip() in ("local", "remote") else "local"
         version_dir = self._version_dir(kind, asset_id, version)
         version_dir.mkdir(parents=True, exist_ok=True)
         content_path = version_dir / filename
@@ -180,6 +199,7 @@ class TeamAssetStore:
             content_hash=content_hash or self.content_hash(payload),
             team_instance_id=self.team_instance_id,
             created_at=time.time(),
+            origin=clean_origin,
         )
         meta_path = version_dir / "asset.json"
         tmp_path = meta_path.with_suffix(".tmp")
@@ -194,6 +214,7 @@ class TeamAssetStore:
                     "content_hash": asset.content_hash,
                     "team_instance_id": asset.team_instance_id,
                     "created_at": asset.created_at,
+                    "origin": asset.origin,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -228,11 +249,35 @@ class TeamAssetStore:
                             content_hash=str(data.get("content_hash", "")),
                             team_instance_id=str(data.get("team_instance_id", "")),
                             created_at=float(data.get("created_at", 0.0)),
+                            origin=str(data.get("origin", "") or "local"),
                         )
                     )
                 except (ValueError, TypeError):
                     continue
         return results
+
+    def delete_published_version(self, kind: AssetKind, asset_id: str, version: str) -> None:
+        """Remove one fixed published version (takedown; not reversible).
+
+        Already-installed copies on other instances are untouched; they just
+        cannot fetch this version again. Raises ``FileNotFoundError`` when
+        the version is not published.
+        """
+        asset_id = normalize_asset_id(kind, asset_id)
+        version = normalize_version(version)
+        version_dir = self._version_dir(kind, asset_id, version)
+        if not version_dir.is_dir():
+            raise FileNotFoundError(f"{kind} {asset_id}@{version} is not published")
+        for child in sorted(version_dir.iterdir()):
+            if child.is_file() or child.is_symlink():
+                child.unlink()
+        version_dir.rmdir()
+        # Prune now-empty parents so the catalog stays tidy.
+        for parent in (version_dir.parent, version_dir.parent.parent):
+            try:
+                parent.rmdir()
+            except OSError:
+                break
 
     def read_published_bytes(self, kind: AssetKind, asset_id: str, version: str) -> bytes:
         """Read the fixed-version payload bytes, verifying the recorded hash."""
@@ -308,6 +353,18 @@ class TeamAssetStore:
             raise FileNotFoundError(f"submission not found: {submission_id}")
         return _read_json(path)
 
+    def delete_pending(self, submission_id: str) -> None:
+        """Delete one submission record without keeping an audit trail.
+
+        Used when a reviewer takes down an approved asset: the published
+        version is removed and its review record goes with it.
+        Raises ``FileNotFoundError`` when the record does not exist.
+        """
+        path = self._pending_path(submission_id)
+        if not path.is_file():
+            raise FileNotFoundError(f"submission not found: {submission_id}")
+        path.unlink()
+
     def set_pending_status(
         self,
         submission_id: str,
@@ -332,6 +389,4 @@ class TeamAssetStore:
         return record
 
     def _pending_path(self, submission_id: str) -> Path:
-        if _SUBMISSION_ID_PATTERN.fullmatch(submission_id or "") is None:
-            raise ValueError(f"invalid submission id: {submission_id!r}")
-        return self.pending_dir / f"{submission_id}.json"
+        return self.pending_dir / f"{normalize_submission_id(submission_id)}.json"

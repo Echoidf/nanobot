@@ -86,6 +86,7 @@ class ContextGovernor:
         updated = self.apply_tool_result_budget(config, updated)
         updated = self.compact_inflight_overflow(config, updated, compacted_tool_call_ids)
         updated = self.snip_history(config, updated)
+        updated = self.prune_stale_reasoning(updated)
         updated = self.drop_orphan_tool_results(updated)
         return self.backfill_missing_tool_results(updated)
 
@@ -432,7 +433,48 @@ class ContextGovernor:
             kept_tokens += msg_tokens
         kept.reverse()
 
-        return system_messages + self._legal_history_tail(kept, non_system)
+        tail = self._legal_history_tail(kept, non_system)
+        omitted = len(non_system) - len(kept)
+        if omitted <= 0:
+            return system_messages + tail
+        notice = {
+            "role": "user",
+            "content": (
+                f"[{omitted} earlier message(s) omitted to fit context. "
+                "Do not repeat completed tool calls; continue from the recent "
+                "tool results below.]"
+            ),
+        }
+        return system_messages + [notice] + tail
+
+    @staticmethod
+    def prune_stale_reasoning(
+        messages: list[dict[str, Any]],
+        keep_last_n: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Keep reasoning only for recent assistant turns.
+
+        Older ``reasoning_content`` is cleared to stop a stale plan from
+        self-reinforcing across iterations. ``thinking_blocks`` are preserved
+        because some providers (Anthropic/Bedrock) require them for request
+        validity; only the free-text reasoning channel is pruned.
+        """
+        assistant_indexes = [
+            idx for idx, msg in enumerate(messages) if msg.get("role") == "assistant"
+        ]
+        if len(assistant_indexes) <= keep_last_n:
+            return messages
+        stale = set(assistant_indexes[:-keep_last_n])
+        updated = messages
+        for idx in stale:
+            msg = messages[idx] if updated is messages else updated[idx]
+            if not msg.get("reasoning_content"):
+                continue
+            if updated is messages:
+                updated = [dict(m) for m in messages]
+            updated[idx] = dict(updated[idx])
+            updated[idx]["reasoning_content"] = ""
+        return updated
 
     @staticmethod
     def _tool_result_compaction_message(message: dict[str, Any]) -> str:

@@ -1,0 +1,340 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nanodesk/workspace",
+      "modelPreset": null,
+      "model": "anthropic/claude-opus-4-8",
+      "provider": "auto",
+      "maxTokens": 8192,
+      "contextWindowTokens": 200000,
+      "contextBlockLimit": null,
+      "temperature": 0.1,
+      "fallbackModels": [],
+      "maxToolIterations": 200,
+      "maxConcurrentSubagents": 1,
+      "failOnToolError": true,
+      "maxToolResultChars": 16000,
+      "providerRetryMode": "standard",
+      "toolHintMaxLength": 40,
+      "reasoningEffort": null,
+      "timezone": "UTC",
+      "timezoneMode": "auto",
+      "botName": "NanoDesk",
+      "botIcon": "/brand/nanodesk_favicon.svg",
+      "unifiedSession": false,
+      "disabledSkills": [],
+      "idleCompactAfterMinutes": 15,
+      "idleCompactCheckIntervalSeconds": 60,
+      "consolidationRatio": 0.5,
+      "dream": {
+        "enabled": true,
+        "intervalH": 2,
+        "modelOverride": null
+      }
+    },
+    "profiles": [
+      {
+        "id": "assistant",
+        "name": "通用助手",
+        "icon": "🤖",
+        "description": "多面手示例（草稿）：日常问答、查资料、写代码都可以找它；把 status 改为 active 即启用",
+        "status": "draft",
+        "modelPreset": null,
+        "systemPrompt": null,
+        "skills": [],
+        "tools": []
+      }
+    ]
+  },
+  "channels": {
+    "sendProgress": true,
+    "sendToolHints": true,
+    "showReasoning": true,
+    "extractDocumentText": true,
+    "sendMaxRetries": 3,
+    "transcriptionProvider": "groq",
+    "transcriptionLanguage": null,
+    "websocket": {
+      "enabled": true,
+      "host": "0.0.0.0",
+      "port": 8765,
+      "unixSocketPath": "",
+      "path": "/",
+      "publicWsUrl": "",
+      "token": "",
+      "tokenIssuePath": "",
+      "tokenIssueSecret": "CHANGE_ME_to_a_long_random_string",
+      "trustedProxyAuth": null,
+      "tokenTtlS": 300,
+      "websocketRequiresToken": true,
+      "allowFrom": [
+        "*"
+      ],
+      "streaming": true,
+      "maxMessageBytes": 37748736,
+      "pingIntervalS": 20.0,
+      "pingTimeoutS": 20.0,
+      "sslCertfile": "",
+      "sslKeyfile": ""
+    }
+  },
+  "transcription": {
+    "enabled": true,
+    "provider": null,
+    "model": null,
+    "language": null,
+    "maxDurationSec": 120,
+    "maxUploadMb": 25
+  },
+  "providers": {
+    "anthropic": {
+      "apiKey": "YOUR_ANTHROPIC_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "openai": {
+      "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {},
+      "apiType": "auto"
+    },
+    "deepseek": {
+      "apiKey": "YOUR_DEEPSEEK_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "groq": {
+      "apiKey": "YOUR_GROQ_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "gemini": {
+      "apiKey": "YOUR_GEMINI_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "openrouter": {
+      "apiKey": "YOUR_OPENROUTER_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "moonshot": {
+      "apiKey": "YOUR_MOONSHOT_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "zhipu": {
+      "apiKey": "YOUR_ZHIPU_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "dashscope": {
+      "apiKey": "YOUR_DASHSCOPE_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "siliconflow": {
+      "apiKey": "YOUR_SILICONFLOW_API_KEY_HERE",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "ollama": {
+      "apiKey": "",
+      "apiBase": "http://localhost:11434",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "vllm": {
+      "apiKey": "",
+      "apiBase": "http://localhost:8000",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {}
+    },
+    "bedrock": {
+      "apiKey": "",
+      "apiBase": "",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {},
+      "region": "us-east-1",
+      "profile": ""
+    },
+    "custom": {
+      "apiKey": "YOUR_CUSTOM_API_KEY_HERE",
+      "apiBase": "https://your-gateway.example.com/v1",
+      "proxy": "",
+      "thinkingStyle": "",
+      "extraHeaders": {},
+      "extraBody": {},
+      "extraQuery": {},
+      "displayName": "My Gateway"
+    }
+  },
+  "api": {
+    "host": "127.0.0.1",
+    "port": 8900,
+    "timeout": 120.0,
+    "apiKey": ""
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790,
+    "restartMode": "auto",
+    "heartbeat": {
+      "enabled": true,
+      "intervalS": 1800,
+      "keepRecentMessages": 8
+    },
+    "siteTitle": "NanoDesk"
+  },
+  "teamAssets": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 18791,
+    "instanceId": "team-main",
+    "name": "团队资产",
+    "description": "内网团队共享资产（skills / MCP / agents）；跨网段拉取需配合 tools.ssrfWhitelist 放行对应 CIDR",
+    "sources": []
+  },
+  "tools": {
+    "web": {
+      "enable": true,
+      "proxy": null,
+      "userAgent": "",
+      "search": {
+        "provider": "duckduckgo",
+        "apiKey": "",
+        "baseUrl": "",
+        "maxResults": 5,
+        "timeout": 30
+      },
+      "fetch": {
+        "useJinaReader": true
+      }
+    },
+    "exec": {
+      "enable": true,
+      "timeout": 60,
+      "pathPrepend": "",
+      "pathAppend": "",
+      "sandbox": "",
+      "sandboxRoBinds": [],
+      "sandboxRwBinds": [],
+      "allowedEnvKeys": [],
+      "allowPatterns": [],
+      "denyPatterns": []
+    },
+    "file": {
+      "enable": true
+    },
+    "cliApps": {
+      "enable": true,
+      "installTimeout": 300,
+      "runTimeout": 60,
+      "catalogTtlSeconds": 3600
+    },
+    "my": {
+      "enable": true,
+      "allowSet": false
+    },
+    "imageGeneration": {
+      "enabled": false,
+      "provider": "openrouter",
+      "model": "openai/gpt-5.4-image-2",
+      "defaultAspectRatio": "1:1",
+      "defaultImageSize": "1K",
+      "maxImagesPerTurn": 4,
+      "saveDir": "generated"
+    },
+    "maxSessionMessagesPerMinute": 6,
+    "restrictToWorkspace": false,
+    "webuiAllowLocalServiceAccess": true,
+    "webuiAllowRemotePackageInstall": true,
+    "webuiAllowRemoteWorkspaceControls": true,
+    "mcpServers": {
+      "example-stdio": {
+        "type": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "some-mcp-server"
+        ],
+        "env": {},
+        "cwd": "",
+        "url": "",
+        "headers": {},
+        "toolTimeout": 30,
+        "enabledTools": [
+          "*"
+        ],
+        "enabled": false,
+        "description": "MCP 接入示例（默认关闭）：照着改 command/args/env 接你自己的服务",
+        "docsUrl": ""
+      }
+    },
+    "ssrfWhitelist": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16"
+    ]
+  },
+  "modelPresets": {
+    "fast": {
+      "model": "anthropic/claude-opus-4-5",
+      "provider": "auto",
+      "maxTokens": 4096,
+      "contextWindowTokens": 200000,
+      "temperature": 0.2,
+      "reasoningEffort": null
+    }
+  },
+  "sharedInstances": []
+}

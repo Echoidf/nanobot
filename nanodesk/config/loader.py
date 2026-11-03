@@ -2,7 +2,9 @@
 
 import json
 import os
+import pwd
 import re
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast, overload
 
@@ -15,6 +17,7 @@ from nanodesk.config.schema import (
     _resolve_tool_config_refs,  # pyright: ignore[reportPrivateUsage]
 )
 from nanodesk.utils.helpers import _write_text_atomic  # pyright: ignore[reportPrivateUsage]
+from nanodesk.utils.identity import effective_home_dir, effective_user_name
 
 # Global variable to store current config path (for multi-instance support)
 _current_config_path: Path | None = None
@@ -33,10 +36,41 @@ def set_config_path(path: Path) -> None:
 
 
 def get_config_path() -> Path:
-    """Get the configuration file path."""
+    """Get the configuration file path.
+
+    The home directory follows the *effective* identity, so a gateway launched
+    with more privilege than the invoking user (setuid launcher, sudo) never
+    writes its config into a directory that user cannot edit afterwards.
+    """
     if _current_config_path:
         return _current_config_path
-    return Path.home() / ".nanodesk" / "config.json"
+    return effective_home_dir() / ".nanodesk" / "config.json"
+
+
+def explain_permission_denied(path: Path, exc: OSError) -> str | None:
+    """Explain an ``EACCES``/``EPERM`` failure on *path*, or return ``None``.
+
+    A gateway started with more privilege than the account that owns the
+    instance directory (``sudo`` on a shared install, a setuid launcher, a
+    service unit with a wrong ``HOME``) leaves ``~/.nanodesk`` owned by another
+    user. The plain "Permission denied" is unhelpful; name the owner and the
+    fix instead.
+    """
+    if isinstance(exc, FileNotFoundError) or not isinstance(exc, PermissionError):
+        return None
+    owner = "?"
+    with suppress(OSError):
+        owner_stat = path.stat()
+        try:
+            owner = pwd.getpwuid(owner_stat.st_uid).pw_name
+        except KeyError:
+            owner = f"uid={owner_stat.st_uid}"
+    return (
+        f"{path} is not writable by {effective_user_name()} (owner: {owner}). "
+        f"nanodesk runs under a different identity than the one that created "
+        f"this file — start it as {owner}, or hand the instance directory back "
+        f"with `sudo chown -R {owner} {path.parent}`."
+    )
 
 
 def load_config(config_path: Path | None = None) -> Config:

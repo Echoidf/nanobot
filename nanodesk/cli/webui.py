@@ -222,9 +222,12 @@ def webui(
         mode="skip" if dev else webui_bundle_mode,
     )
 
+    # ``config`` (the CLI flag) is what tells the default instance apart from
+    # an explicit one; ``config_path`` has already fallen back to the default.
     instance = GatewayInstance.resolve(
         config_path=config_path,
         workspace=workspace,
+        explicit=config is not None or workspace is not None,
     )
     runtime = GatewayRuntime(paths=instance.paths)
     start_options = instance.start_options(port=effective_gateway_port)

@@ -76,11 +76,6 @@ class GoalStateSyncEvent(OutboundEvent):
 
 
 @dataclass(frozen=True)
-class TaskStateSyncEvent(OutboundEvent):
-    task_state: dict[str, Any]
-
-
-@dataclass(frozen=True)
 class SessionUpdatedEvent(OutboundEvent):
     scope: str | None = None
 

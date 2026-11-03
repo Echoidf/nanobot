@@ -5,6 +5,8 @@
 # Produces:  <out>/nanodesk-offline-<TAG>-<arch>-<pytag>.tar.gz
 #   nanodesk-offline-<TAG>/
 #   ├── install.sh               # runs on the offline server
+#   ├── service.sh               # service manager: start|stop|restart|status|logs (background)
+#   ├── config.json.example      # config template (first `service.sh start` bootstraps from it)
 #   ├── requirements-linux.txt   # fully pinned dependency set
 #   ├── wheelhouse/              # every dependency wheel (linux target)
 #   └── dist/nanodesk_ai-*.whl    # nanodesk itself (WebUI bundled inside)
@@ -459,6 +461,21 @@ echo "======================================================"
 INSTALLER
 chmod +x "$PKG_DIR/install.sh"
 
+# ---------- 6. service manager + config template ----------
+# service.sh is maintained at scripts/offline/service.sh so it can be
+# reviewed and shellchecked in-repo; the bundle ships a copy next to
+# install.sh. config.json.example is maintained at the repo root.
+log "Adding service manager and config template"
+cp "$REPO_ROOT/scripts/offline/service.sh" "$PKG_DIR/service.sh"
+cp "$REPO_ROOT/config.json.example" "$PKG_DIR/config.json.example"
+chmod +x "$PKG_DIR/service.sh"
+command -v shellcheck >/dev/null 2>&1 \
+  && shellcheck -S warning "$PKG_DIR/service.sh" \
+  || bash -n "$PKG_DIR/service.sh" || die "service.sh has a syntax error"
+bash -n "$PKG_DIR/install.sh" || die "install.sh has a syntax error"
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$PKG_DIR/config.json.example" \
+  || die "config.json.example is not valid JSON"
+
 TARBALL="$OUT_DIR/nanodesk-offline-${TAG}-${ARCH}-${PYTAG}.tar.gz"
 log "Packing $TARBALL"
 tar -czf "$TARBALL" -C "$STAGE" "nanodesk-offline-${TAG}"
@@ -470,3 +487,6 @@ echo ""
 echo "  on the offline box:"
 echo "    tar xzf $(basename "$TARBALL") && cd nanodesk-offline-${TAG}"
 echo "    bash install.sh /path/to/python3.12"
+echo "    bash service.sh start    # first run bootstraps ~/.nanodesk/config.json from the example"
+echo "    bash service.sh status   # check it is running (background, logs/)"
+echo "    bash service.sh logs     # follow the gateway log"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,11 @@ _MAX_REPEAT_EXTERNAL_LOOKUPS = 2
 
 # Third same-target workspace violation in a turn escalates to "stop retrying".
 _MAX_REPEAT_WORKSPACE_VIOLATIONS = 2
+# Generic guard against model loops: third identical tool call in a turn is blocked.
+_MAX_REPEAT_IDENTICAL_TOOL_CALLS = 2
+# Consecutive identical assistant messages (text + tool signature) before nudging.
+_MAX_REPEAT_ASSISTANT_MESSAGES = 2
+_MAX_STUCK_NUDGES_PER_TURN = 2
 _LENGTH_RECOVERY_TAIL_CHARS = 64
 
 EMPTY_FINAL_RESPONSE_MESSAGE = (
@@ -22,7 +28,8 @@ EMPTY_FINAL_RESPONSE_MESSAGE = (
 )
 
 FINALIZATION_RETRY_PROMPT = (
-    "Please provide your response to the user based on the conversation above."
+    "Please provide your response to the user based on the conversation above. "
+    "Reply in the same language the user used."
 )
 
 BUDGET_EXHAUSTED_FINALIZATION_PROMPT = (
@@ -30,7 +37,8 @@ BUDGET_EXHAUSTED_FINALIZATION_PROMPT = (
     "conversation and tool results above, provide a concise final response to "
     "the user. Do not call or request tools. Do not claim the task is complete "
     "unless the evidence above clearly shows it is complete. State what was "
-    "done, what remains, and the best next step if anything is incomplete."
+    "done, what remains, and the best next step if anything is incomplete. "
+    "Reply in the same language the user used."
 )
 
 LENGTH_RECOVERY_PROMPT = (
@@ -210,4 +218,103 @@ def repeated_workspace_violation_error(
         "If the user genuinely needs this resource, tell them you cannot "
         "access it and ask how they want to proceed (e.g. copy the file "
         "into the workspace, or disable restrict_to_workspace for this run)."
+    )
+
+
+STUCK_LOOP_NUDGE_PROMPT = (
+    "You have repeated the same response/tool call {count} times without visible "
+    "progress. Stop repeating. Briefly summarize what the tool results above actually "
+    "prove, then try a meaningfully different approach (narrower args, another tool, "
+    "or ask the user for the missing input). Do not output the same status sentence again."
+)
+
+
+def tool_call_signature(tool_name: str, arguments: Any) -> str:
+    """Canonical signature for detecting identical tool-call loops."""
+    try:
+        if isinstance(arguments, dict):
+            canonical = json.dumps(arguments, sort_keys=True, default=str, ensure_ascii=False)
+        else:
+            canonical = str(arguments)
+    except Exception:
+        canonical = str(arguments)
+    return f"{tool_name}:{canonical}"
+
+
+def repeated_identical_tool_call_error(
+    tool_name: str,
+    arguments: Any,
+    seen_counts: dict[str, int],
+) -> str | None:
+    """Block the third identical tool call within a turn."""
+    signature = tool_call_signature(tool_name, arguments)
+    count = seen_counts.get(signature, 0) + 1
+    seen_counts[signature] = count
+    if count <= _MAX_REPEAT_IDENTICAL_TOOL_CALLS:
+        return None
+    logger.warning(
+        "Blocking repeated identical tool call {} on attempt {}",
+        signature[:200],
+        count,
+    )
+    return (
+        "Error: repeated identical tool call blocked. "
+        f"You have called this exact tool+arguments {count} times in this turn. "
+        "Use the results you already have to answer, or try a meaningfully different "
+        "tool or arguments instead of retrying unchanged."
+    )
+
+
+def normalize_assistant_fingerprint(content: str | None, tool_calls: Any = None) -> str:
+    """Fingerprint for detecting repetitive status text / tool plans."""
+    text = " ".join((content or "").lower().split())[:500]
+    sigs: list[str] = []
+    for tc in tool_calls or []:
+        name = ""
+        args: Any = ""
+        if hasattr(tc, "name"):
+            name = getattr(tc, "name", "") or ""
+            args = getattr(tc, "arguments", "")
+        elif isinstance(tc, dict):
+            fn = tc.get("function") if isinstance(tc.get("function"), dict) else None
+            name = (fn.get("name") if fn else tc.get("name")) or ""
+            args = (fn.get("arguments") if fn else tc.get("arguments")) or ""
+        sigs.append(tool_call_signature(str(name), args))
+    sigs.sort()
+    return f"{text}|tools:{','.join(sigs)}"
+
+
+def build_stuck_loop_nudge_message(count: int) -> dict[str, str]:
+    """Nudge the model off a repetitive-response loop."""
+    return {"role": "user", "content": STUCK_LOOP_NUDGE_PROMPT.format(count=count)}
+
+
+_MAX_REPEAT_TOOL_ERRORS = 3
+
+
+def tool_error_fused(tool_name: str, seen_counts: dict[str, int]) -> bool:
+    """True when the same tool already failed repeatedly this turn."""
+    return seen_counts.get(tool_name, 0) >= _MAX_REPEAT_TOOL_ERRORS
+
+
+def record_tool_error(tool_name: str, seen_counts: dict[str, int]) -> int:
+    """Record one tool failure; returns the updated count."""
+    count = seen_counts.get(tool_name, 0) + 1
+    seen_counts[tool_name] = count
+    return count
+
+
+def repeated_tool_error(
+    tool_name: str,
+    seen_counts: dict[str, int],
+) -> str | None:
+    """Fuse after the same tool fails repeatedly, even with different args."""
+    count = seen_counts.get(tool_name, 0)
+    if count < _MAX_REPEAT_TOOL_ERRORS:
+        return None
+    logger.warning("Tool {} failed {} times in this turn; fusing", tool_name, count)
+    return (
+        f"Error: tool '{tool_name}' has failed {count} times in this turn. "
+        "Stop retrying it. Report what is blocking you and ask the user how to "
+        "proceed instead of calling it again."
     )

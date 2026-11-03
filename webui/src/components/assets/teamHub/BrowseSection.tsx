@@ -74,6 +74,18 @@ export function BrowseSection({
                   {asset.description ||
                     t("assets.teamHub.noDescription", { defaultValue: "No description" })}
                 </p>
+                <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {asset.origin === "remote"
+                      ? t("assets.teamHub.originRemote", { defaultValue: "Remote" })
+                      : t("assets.teamHub.originLocal", { defaultValue: "Local" })}
+                  </span>
+                  {!asset.enabled ? (
+                    <span className="rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {t("assets.teamHub.disabledBadge", { defaultValue: "Disabled" })}
+                    </span>
+                  ) : null}
+                </p>
                 {asset.installed ? (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
                     {asset.upgradable

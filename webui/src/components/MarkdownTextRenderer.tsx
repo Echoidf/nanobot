@@ -74,9 +74,15 @@ type AvailabilityResult = {
 
 function InferredFileReferenceChip({
   path,
+  label,
+  tooltipPath,
+  previewPath,
   onOpen,
 }: {
   path: string;
+  label?: string;
+  tooltipPath?: string;
+  previewPath?: string;
   onOpen?: (path: string) => void;
 }) {
   const resolve = useFilePreviewAvailabilityResolver();
@@ -85,26 +91,31 @@ function InferredFileReferenceChip({
   useEffect(() => {
     if (!resolve || !onOpen) return;
     let cancelled = false;
-    resolve(path)
+    // Probe the preview target (which may strip line suffixes), not the label.
+    const probePath = previewPath || tooltipPath || path;
+    resolve(probePath)
       .then((available) => {
-        if (!cancelled) setResult({ available, path, resolve });
+        if (!cancelled) setResult({ available, path: probePath, resolve });
       })
       .catch(() => {
-        if (!cancelled) setResult({ available: false, path, resolve });
+        if (!cancelled) setResult({ available: false, path: probePath, resolve });
       });
     return () => {
       cancelled = true;
     };
-  }, [onOpen, path, resolve]);
+  }, [onOpen, path, previewPath, resolve, tooltipPath]);
 
+  const probePath = previewPath || tooltipPath || path;
   const resolvedAvailable = !resolve || (
     result?.resolve === resolve
-    && result.path === path
+    && result.path === probePath
     && result.available
   );
   return (
     <FileReferenceChip
-      path={path}
+      path={label || path}
+      tooltipPath={tooltipPath}
+      previewPath={previewPath}
       onOpen={onOpen && resolvedAvailable ? onOpen : undefined}
     />
   );
@@ -650,9 +661,12 @@ export default function MarkdownTextRenderer({
         const filePath = fileReferenceFromLink(href);
         if (filePath) {
           const label = nodeText(markdownChildren).trim();
+          // Route link-form file references through the same availability
+          // probe as inline code so both forms agree on clickability.
           return (
-            <FileReferenceChip
-              path={label || filePath}
+            <InferredFileReferenceChip
+              path={filePath}
+              label={label || undefined}
               tooltipPath={filePath}
               previewPath={filePath}
               onOpen={onOpenFilePreview}

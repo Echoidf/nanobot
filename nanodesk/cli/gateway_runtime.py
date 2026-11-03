@@ -325,6 +325,7 @@ def _run_gateway(
     from nanodesk.session.webui_turns import (
         WebuiTurnCoordinator,
         WebuiTurnRoutePolicy,
+        backfill_webui_titles,
         build_webui_fallback_model_observer,
     )
     from nanodesk.triggers.local_runner import run_local_trigger_queue
@@ -450,6 +451,15 @@ def _run_gateway(
         schedule_background=_schedule_webui_background,
     )
     webui_turn_coordinator.subscribe(runtime_events)
+
+    async def _backfill_webui_titles() -> None:
+        runtime = agent.llm_runtime()
+        await backfill_webui_titles(
+            sessions=session_manager,
+            provider=runtime.provider,
+            model=runtime.model,
+        )
+
     from nanodesk.bus.events import OutboundMessage
     from nanodesk.session.keys import session_key_for_channel
 
@@ -795,6 +805,8 @@ def _run_gateway(
             instance_id=cfg.instance_id,
             name=cfg.name,
             description=cfg.description,
+            config_path=Path(config_path),
+            workspace_path=runtime_config.workspace_path,
         )
         runner = web.AppRunner(app)
         await runner.setup()
@@ -951,6 +963,9 @@ def _run_gateway(
                     _watch_webui_dev_server(webui_dev_server, shutdown_event),
                     name="nanodesk-webui-dev-server",
                 ))
+            # Startup-time work must be scheduled from inside the running loop;
+            # schedule_background uses asyncio.create_task.
+            _schedule_webui_background(_backfill_webui_titles())
             runtime_tasks = asyncio.gather(*tasks)
             shutdown_task = asyncio.create_task(
                 shutdown_event.wait(),

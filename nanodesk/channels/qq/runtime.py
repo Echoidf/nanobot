@@ -48,6 +48,8 @@ try:
 except Exception:  # pragma: no cover
     get_media_dir = None  # type: ignore
 
+from nanodesk.utils.identity import effective_home_dir  # noqa: E402
+
 try:
     import botpy
     from botpy.gateway import BotWebSocket
@@ -227,12 +229,11 @@ class QQChannel(BaseChannel):
         if self.config.media_dir:
             root = Path(self.config.media_dir).expanduser()
         elif get_media_dir:
-            try:
-                root = Path(get_media_dir("qq"))
-            except Exception:
-                root = Path.home() / ".nanodesk" / "media" / "qq"
+            root = Path(get_media_dir("qq"))
         else:
-            root = Path.home() / ".nanodesk" / "media" / "qq"
+            # Fallback only when config.paths cannot be imported: follow the
+            # effective identity, never a hard-coded home directory.
+            root = effective_home_dir() / ".nanodesk" / "media" / "qq"
 
         root.mkdir(parents=True, exist_ok=True)
         self.logger.info("media directory: {}", str(root))

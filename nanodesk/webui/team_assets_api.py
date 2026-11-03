@@ -18,6 +18,7 @@ from nanodesk.team_assets.client import (
     download_team_skill_asset,
     fetch_team_catalog,
     fetch_team_info,
+    fetch_team_submission_status,
     submit_team_asset,
 )
 from nanodesk.team_assets.install import (
@@ -25,28 +26,41 @@ from nanodesk.team_assets.install import (
     install_team_skill_asset,
     installed_team_assets,
 )
+from nanodesk.team_assets.live import is_live_version, list_live_local_assets
 from nanodesk.team_assets.review import (
     approve_team_submission,
+    delete_team_submission,
     list_team_submissions,
-    publish_local_mcp,
-    publish_local_skill,
     reject_team_submission,
 )
-from nanodesk.team_assets.store import AssetKind, TeamAssetStore, normalize_asset_id
+from nanodesk.team_assets.store import (
+    AssetKind,
+    TeamAssetStore,
+    normalize_asset_id,
+    normalize_version,
+)
+from nanodesk.team_assets.submitted import (
+    list_team_submitted,
+    record_team_submitted,
+    update_team_submitted_status,
+)
 
 __all__ = [
     "TeamAssetsError",
     "approve_submission",
+    "delete_submission_record",
     "fetch_team_asset",
     "install_fetched_team_asset",
+    "install_published_to_local",
     "probe_team_instance",
-    "publish_team_asset",
+    "refresh_team_submitted",
     "remote_catalog_payload",
     "reject_submission",
     "remove_team_asset_source",
     "save_team_asset_source",
     "submit_local_asset",
     "team_assets_payload",
+    "unpublish_team_asset",
 ]
 
 _SOURCE_ID_MAX = 64
@@ -81,17 +95,7 @@ def find_team_asset_source(config: Config, source_id: str) -> TeamAssetSourceCon
     raise TeamAssetsError(f"unknown team instance: {wanted or '(empty)'}", status=404)
 
 
-def _published_summary(workspace_path: Path) -> dict[str, list[dict[str, Any]]]:
-    store = TeamAssetStore(workspace_path)
-    if not store.published_dir.is_dir():
-        return {"skills": [], "mcp": []}
-    return {
-        "skills": [_published_entry(asset, "skill") for asset in store.list_published("skill")],
-        "mcp": [_published_entry(asset, "mcp") for asset in store.list_published("mcp")],
-    }
-
-
-def _published_entry(asset: Any, kind: AssetKind) -> dict[str, Any]:
+def _snapshot_entry(asset: Any, kind: AssetKind) -> dict[str, Any]:
     return {
         "kind": kind,
         "id": asset.asset_id,
@@ -99,13 +103,25 @@ def _published_entry(asset: Any, kind: AssetKind) -> dict[str, Any]:
         "description": asset.description,
         "content_hash": asset.content_hash,
         "created_at": asset.created_at,
+        "origin": getattr(asset, "origin", "") or "local",
+    }
+
+
+def _snapshot_summary(workspace_path: Path) -> dict[str, list[dict[str, Any]]]:
+    store = TeamAssetStore(workspace_path)
+    if not store.published_dir.is_dir():
+        return {"skills": [], "mcp": []}
+    return {
+        "skills": [_snapshot_entry(asset, "skill") for asset in store.list_published("skill")],
+        "mcp": [_snapshot_entry(asset, "mcp") for asset in store.list_published("mcp")],
     }
 
 
 def team_assets_payload(config: Config, workspace_path: Path) -> dict[str, Any]:
     """Return the whole team-assets surface for one WebUI refresh."""
     cfg = config.team_assets
-    pending = list_team_submissions(workspace_path)
+    pending = list_team_submissions(workspace_path, include_reviewed=True)
+    live = list_live_local_assets(workspace_path, config)
     return {
         "publisher": {
             "enabled": cfg.enabled,
@@ -114,7 +130,8 @@ def team_assets_payload(config: Config, workspace_path: Path) -> dict[str, Any]:
             "description": cfg.description,
             "host": cfg.host,
             "port": cfg.port,
-            "published": _published_summary(workspace_path),
+            "local": live,
+            "snapshots": _snapshot_summary(workspace_path),
         },
         "sources": [
             {
@@ -138,10 +155,14 @@ def team_assets_payload(config: Config, workspace_path: Path) -> dict[str, Any]:
                 "submitter": record.get("submitter", ""),
                 "note": record.get("note", ""),
                 "created_at": record.get("created_at", 0.0),
+                "status": record.get("status", "pending"),
+                "reviewer": record.get("reviewer", ""),
+                "reviewed_at": record.get("reviewed_at", 0.0),
                 "preview": _submission_preview(record),
             }
             for record in pending
         ],
+        "submitted": list_team_submitted(workspace_path),
     }
 
 
@@ -344,34 +365,6 @@ def install_fetched_team_asset(
     return {**result, "source_id": source.id, "requires_restart": asset_kind == "mcp"}
 
 
-def publish_team_asset(
-    config: Config,
-    *,
-    kind: str,
-    asset_id: str,
-    version: str,
-    description: str = "",
-) -> dict[str, Any]:
-    """Publish one local workspace skill or configured MCP server."""
-    asset_kind = _kind(kind)
-    workspace_path = config.workspace_path
-    try:
-        if asset_kind == "skill":
-            asset = publish_local_skill(
-                workspace_path,
-                asset_id,
-                version,
-                description=description.strip()[:1024],
-            )
-        else:
-            asset = publish_local_mcp(config, workspace_path, asset_id, version)
-    except ValueError as exc:
-        raise TeamAssetsError(str(exc)) from exc
-    except OSError as exc:
-        raise TeamAssetsError(f"could not publish asset: {exc}", status=500) from exc
-    return _published_entry(asset, asset_kind)
-
-
 def approve_submission(
     workspace_path: Path,
     *,
@@ -394,7 +387,13 @@ def approve_submission(
     return {
         "submission_id": submission_id,
         "approved": True,
-        **_published_entry(asset, asset.kind),
+        "kind": asset.kind,
+        "id": asset.asset_id,
+        "version": asset.version,
+        "description": asset.description,
+        "content_hash": asset.content_hash,
+        "created_at": asset.created_at,
+        "origin": asset.origin or "remote",
     }
 
 
@@ -414,6 +413,142 @@ def reject_submission(
     except ValueError as exc:
         raise TeamAssetsError(str(exc)) from exc
     return {"submission_id": submission_id, "rejected": True, "status": record.get("status", "")}
+
+
+def unpublish_team_asset(
+    config: Config,
+    *,
+    kind: str,
+    asset_id: str,
+    version: str,
+) -> dict[str, Any]:
+    """Take down one fixed published version (takedown; not reversible).
+
+    The version directory is removed and any approved review record for
+    the same ``(kind, id, version)`` is deleted with it — no audit trail
+    is kept, per the team-asset takedown policy. Copies already installed
+    on other instances are untouched; they just cannot fetch it again.
+    """
+    asset_kind = _kind(kind)
+    try:
+        normalized_id = normalize_asset_id(asset_kind, asset_id)
+        normalized_version = normalize_version(version)
+    except ValueError as exc:
+        raise TeamAssetsError(str(exc)) from exc
+    if is_live_version(normalized_version):
+        raise TeamAssetsError(
+            "live assets are shared directly; change or remove the local asset instead",
+            status=400,
+        )
+    store = TeamAssetStore(config.workspace_path)
+    try:
+        store.delete_published_version(asset_kind, normalized_id, normalized_version)
+    except FileNotFoundError as exc:
+        raise TeamAssetsError("asset version is not published", status=404) from exc
+    removed: list[str] = []
+    for record in store.list_pending():
+        if (
+            record.get("status") == "approved"
+            and record.get("asset_type") == asset_kind
+            and record.get("id") == normalized_id
+            and record.get("version") == normalized_version
+        ):
+            submission_id = str(record.get("submission_id", ""))
+            try:
+                store.delete_pending(submission_id)
+            except (FileNotFoundError, ValueError):
+                continue
+            removed.append(submission_id)
+    return {
+        "kind": asset_kind,
+        "asset_id": normalized_id,
+        "version": normalized_version,
+        "unpublished": True,
+        "removed_submissions": removed,
+    }
+
+
+def delete_submission_record(
+    workspace_path: Path, *, submission_id: str
+) -> dict[str, Any]:
+    """Delete one reviewed submission record without keeping an audit trail."""
+    try:
+        return delete_team_submission(workspace_path, submission_id)
+    except ValueError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message else 400
+        raise TeamAssetsError(message, status=status) from exc
+
+
+def install_published_to_local(
+    config: Config,
+    *,
+    kind: str,
+    asset_id: str,
+    version: str,
+) -> dict[str, Any]:
+    """Install one of this instance's own published snapshots locally.
+
+    Split from the config write so reading the snapshot never runs while
+    the config file lock is held; the caller persists MCP changes through
+    the normal serialized config writer. Returns the install result plus
+    ``requires_restart`` (true for MCP).
+    """
+    import json as _json
+
+    asset_kind = _kind(kind)
+    try:
+        normalized_id = normalize_asset_id(asset_kind, asset_id)
+        normalized_version = normalize_version(version)
+    except ValueError as exc:
+        raise TeamAssetsError(str(exc)) from exc
+    store = TeamAssetStore(config.workspace_path)
+    try:
+        payload = store.read_published_bytes(asset_kind, normalized_id, normalized_version)
+    except FileNotFoundError as exc:
+        raise TeamAssetsError("asset version is not published", status=404) from exc
+    except ValueError as exc:
+        raise TeamAssetsError(f"published asset failed its integrity check: {exc}") from exc
+    self_id = config.team_assets.instance_id
+    recorded_hash = ""
+    recorded_description = ""
+    for asset in store.list_published(asset_kind):
+        if asset.asset_id == normalized_id and asset.version == normalized_version:
+            recorded_hash = asset.content_hash
+            recorded_description = asset.description
+            break
+    try:
+        if asset_kind == "skill":
+            skill_markdown = payload.decode("utf-8")
+            result = install_team_skill_asset(
+                config.workspace_path,
+                skill_id=normalized_id,
+                version=normalized_version,
+                skill_markdown=skill_markdown,
+                content_hash=recorded_hash or TeamAssetStore.content_hash(payload),
+                team_instance_id=self_id,
+                source_url="",
+                description=recorded_description,
+            )
+        else:
+            manifest_raw = _json.loads(payload.decode("utf-8"))
+            if not isinstance(manifest_raw, dict):
+                raise TeamAssetsError("published MCP manifest is malformed", status=500)
+            manifest = cast(dict[str, Any], manifest_raw)
+            result = install_team_mcp_asset(
+                config,
+                name=normalized_id,
+                version=normalized_version,
+                manifest=manifest,
+                content_hash=recorded_hash,
+                team_instance_id=self_id,
+                source_url="",
+            )
+    except TeamAssetsError:
+        raise
+    except ValueError as exc:
+        raise TeamAssetsError(str(exc), status=400) from exc
+    return {**result, "requires_restart": asset_kind == "mcp"}
 
 
 def _local_skill_content(workspace_path: Path, skill_id: str) -> str:
@@ -491,4 +626,63 @@ async def submit_local_asset(
         )
     except TeamAssetClientError as exc:
         raise TeamAssetsError(exc.message, status=exc.status) from exc
-    return {**result, "source_id": source.id, "kind": asset_kind, "asset_id": normalized_id}
+
+    # The peer accepted it; record our side so the submission is listable
+    # and trackable instead of living only in a one-shot toast.
+    try:
+        record = record_team_submitted(
+            config.workspace_path,
+            submission_id=str(result["submission_id"]),
+            kind=asset_kind,
+            asset_id=normalized_id,
+            version=version,
+            submitter=who,
+            note=note,
+            target_id=source.id,
+            target_name=source.name or source.id,
+            target_url=source.base_url,
+        )
+    except (ValueError, OSError) as exc:
+        raise TeamAssetsError(
+            f"submitted to {source.name or source.id}, but recording it locally failed: {exc}",
+            status=500,
+        ) from exc
+    return {
+        **result,
+        "source_id": source.id,
+        "kind": asset_kind,
+        "asset_id": normalized_id,
+        "record": record,
+    }
+
+
+async def refresh_team_submitted(config: Config) -> list[dict[str, Any]]:
+    """Re-check each recorded submission's review state at its peer.
+
+    The check follows the *current* binding for that peer id (so a
+    migrated address keeps tracking), falling back to the recorded URL
+    once the binding is gone. A peer that no longer knows a submission
+    (rejected and cleared, or its asset was taken down) marks the record
+    ``gone``. Transport failures keep the previous state and carry a
+    per-row ``check_error`` so one unreachable team never hides the others.
+    """
+    workspace_path = config.workspace_path
+    bound = {source.id: source.base_url for source in config.team_assets.sources}
+    rows: list[dict[str, Any]] = []
+    for record in list_team_submitted(workspace_path):
+        submission_id = str(record.get("submission_id", ""))
+        target_id = str(record.get("target_id", ""))
+        target_url = bound.get(target_id) or str(record.get("target_url", ""))
+        if not submission_id or not target_url:
+            continue
+        try:
+            info = await fetch_team_submission_status(target_url, submission_id)
+            status = str(info.get("status", "pending"))
+            error = ""
+        except TeamAssetClientError as exc:
+            status = str(record.get("status", "pending"))
+            error = exc.message
+        updated = update_team_submitted_status(workspace_path, submission_id, status)
+        row = updated or record
+        rows.append({**row, "target_url": target_url, "check_error": error})
+    return rows

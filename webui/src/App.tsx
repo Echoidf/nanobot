@@ -2670,6 +2670,18 @@ function Shell({
     updateWorkbenchState((current) => detachWorkbenchPane(current, tabKey, paneKey));
   }, [updateWorkbenchState]);
 
+  const onCloseWorkbenchPane = useCallback((paneKey: string) => {
+    const tabKey = activeTabKey;
+    const tab = activeTabState;
+    if (!tabKey || !tab || !tab.paneKeys.includes(paneKey)) return;
+    const remaining = tab.paneKeys.filter((key) => key !== paneKey);
+    updateWorkbenchState((current) => detachWorkbenchPane(current, tabKey, paneKey));
+    if (paneKey === activeKey && remaining.length > 0) {
+      const remembered = lastActivePaneByTabRef.current.get(tabKey);
+      onSelectChat(remembered && remaining.includes(remembered) ? remembered : remaining[0]);
+    }
+  }, [activeTabKey, activeTabState, activeKey, updateWorkbenchState, onSelectChat]);
+
   const onCreateWorkbenchTab = useCallback((paneKey: string) => {
     updateWorkbenchState((current) => createWorkbenchTab(current, paneKey));
   }, [updateWorkbenchState]);
@@ -3000,6 +3012,9 @@ function Shell({
                   onCloseTemporaryChat={onCloseTemporaryChat}
                   onRequestRename={onRequestRename}
                   onRequestDelete={onRequestDelete}
+                  onRequestDeleteMany={onRequestDeleteMany}
+                  onNewChat={onNewChat}
+                  onNewChatInProject={onNewChatInProject}
                 />
               ) : null}
               <div className="relative flex min-w-0 flex-1 flex-col">
@@ -3018,6 +3033,7 @@ function Shell({
                   : undefined}
                 onActivatePane={onActivateWorkbenchPane}
                 onAddPane={onAddPane}
+                onClosePane={onCloseWorkbenchPane}
                 onLayoutChange={(layout) => {
                   if (!activeTabKey) return;
                   updateWorkbenchState((current) => (

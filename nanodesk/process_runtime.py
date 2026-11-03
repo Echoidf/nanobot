@@ -23,6 +23,8 @@ from typing import Any, Generic, Literal, TypeVar, cast
 
 from filelock import FileLock
 
+from nanodesk.utils.identity import copy_file_owner, set_private_mode
+
 
 @dataclass(frozen=True)
 class ProcessStartOptions:
@@ -125,8 +127,11 @@ class ManagedProcessRuntime(Generic[_StartOptionsT]):
         command = self._build_child_command(options)
         self.paths.run_dir.mkdir(parents=True, exist_ok=True)
         self.paths.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_stat = _stat_or_none(self.paths.log_path)
 
         with self.paths.log_path.open("a", encoding="utf-8") as log_handle:
+            set_private_mode(self.paths.log_path)
+            copy_file_owner(self.paths.log_path, log_stat)
             process = self._popen(
                 command,
                 stdin=subprocess.DEVNULL,
@@ -460,6 +465,7 @@ class ManagedProcessRuntime(Generic[_StartOptionsT]):
 
     def _write_state(self, payload: dict[str, Any]) -> None:
         self.paths.run_dir.mkdir(parents=True, exist_ok=True)
+        state_stat = _stat_or_none(self.paths.state_path)
         fd, tmp_name = tempfile.mkstemp(
             prefix=f"{self.paths.state_path.name}.",
             suffix=".tmp",
@@ -468,6 +474,8 @@ class ManagedProcessRuntime(Generic[_StartOptionsT]):
         tmp_path = Path(tmp_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                set_private_mode(tmp_path)
+                copy_file_owner(tmp_path, state_stat)
                 json.dump(payload, handle, indent=2, ensure_ascii=False)
                 handle.write("\n")
                 handle.flush()
@@ -478,6 +486,14 @@ class ManagedProcessRuntime(Generic[_StartOptionsT]):
 
     def _clear_state(self) -> None:
         self.paths.state_path.unlink(missing_ok=True)
+
+
+def _stat_or_none(path: Path) -> os.stat_result | None:
+    """Return *path*'s stat record, or ``None`` when it does not exist."""
+    try:
+        return path.stat()
+    except OSError:
+        return None
 
 
 def _platform_name() -> str:

@@ -5,6 +5,7 @@ import {
   PanelsTopLeft,
   Plus,
   Rows2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -71,6 +72,7 @@ interface PaneWorkbenchProps {
   addPaneDisabledLabel?: string;
   onActivatePane: (key: string) => void;
   onAddPane: () => void;
+  onClosePane?: (key: string) => void;
   onLayoutChange: (layout: WorkbenchLayout) => void;
   onPaneOrderChange: (paneKeys: string[]) => void;
   splitRatios?: number[];
@@ -206,6 +208,7 @@ export function PaneWorkbench({
   addPaneDisabledLabel,
   onActivatePane,
   onAddPane,
+  onClosePane,
   onLayoutChange,
   onPaneOrderChange,
   splitRatios = EMPTY_SPLIT_RATIOS,
@@ -679,6 +682,16 @@ export function PaneWorkbench({
           onAddPane();
         }}
       />
+      {panes.length > 1 && onClosePane ? (
+        <HeaderIconButton
+          icon={X}
+          label={t("workbench.closePane", { defaultValue: "Close pane" })}
+          onClick={() => {
+            captureLayout();
+            onClosePane(activePaneKey);
+          }}
+        />
+      ) : null}
     </div>
   ) : null;
 

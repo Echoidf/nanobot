@@ -31,6 +31,7 @@ from nanodesk.process_runtime import (
     process_identity_record,
     process_is_running,
 )
+from nanodesk.utils.identity import effective_home_dir
 
 GatewayStartOptions = ProcessStartOptions
 
@@ -39,7 +40,34 @@ GatewayLifetime = Literal["explicit", "on_demand"]
 
 
 def _default_config_path() -> Path:
-    return (Path.home() / ".nanodesk" / "config.json").resolve(strict=False)
+    """Return the pristine default config path (effective user's home).
+
+    Deliberately ignores the process-wide config cache in the loader: "the
+    default instance" is defined by the account's home, not by whichever
+    config this process happened to load first. Comparing against the cache
+    would make ``resolve()`` misclassify an explicit ``--config`` as the
+    default (or vice versa) depending on call order.
+    """
+    return (effective_home_dir() / ".nanodesk" / "config.json").resolve(strict=False)
+
+
+def _explicitly_requested_config(
+    workspace: str | None,
+    config: str | None,
+    *,
+    config_path: str | Path | None = None,
+) -> bool:
+    """Return whether an operator pointed nanodesk at a specific instance.
+
+    Callers that know the CLI selectors pass them directly (``config`` /
+    ``workspace``); the ``config_path`` fallback keeps direct ``resolve()``
+    calls (tests, internal helpers) working without selector context.
+    """
+    if config or workspace:
+        return True
+    if config_path is None:
+        return False
+    return Path(config_path).expanduser().resolve(strict=False) != _default_config_path()
 
 
 @dataclass(frozen=True)
@@ -127,6 +155,11 @@ class GatewayInstance:
     config_path: Path
     workspace: str | None
     paths: GatewayRuntimePaths
+    # Whether ``config_path`` is the process-wide default instance. It is
+    # decided once, at resolve time: re-deriving it later compares the config
+    # that this process has since loaded (and cached in the config loader)
+    # against itself, which would silently hide an explicit ``--config``.
+    is_default: bool = False
 
     @classmethod
     def resolve(
@@ -134,6 +167,7 @@ class GatewayInstance:
         *,
         config_path: str | Path,
         workspace: str | None = None,
+        explicit: bool | None = None,
     ) -> "GatewayInstance":
         resolved_config = Path(config_path).expanduser().resolve(strict=False)
         resolved_workspace = (
@@ -141,9 +175,10 @@ class GatewayInstance:
         )
         # The released default instance used gateway.json. Keep that identity stable
         # across upgrades while still namespacing explicit configs and workspaces.
-        config_selector = (
-            None if resolved_config == _default_config_path() else str(resolved_config)
-        )
+        if explicit is None:
+            explicit = _explicitly_requested_config(workspace, None, config_path=config_path)
+        is_default = not explicit
+        config_selector = None if is_default else str(resolved_config)
         return cls(
             config_path=resolved_config,
             workspace=resolved_workspace,
@@ -152,6 +187,7 @@ class GatewayInstance:
                 workspace=resolved_workspace,
                 config_path=config_selector,
             ),
+            is_default=is_default,
         )
 
     def start_options(
@@ -160,13 +196,15 @@ class GatewayInstance:
         port: int,
         verbose: bool = False,
     ) -> GatewayStartOptions:
+        # Always pass the config the instance was resolved from. Omitting it for
+        # the default instance made the child re-derive ``~/.nanodesk`` from its
+        # own identity, which is exactly how a privileged parent handed the
+        # instance directory to the wrong user.
         return GatewayStartOptions(
             port=port,
             verbose=verbose,
             workspace=self.workspace,
-            config_path=(
-                None if self.config_path == _default_config_path() else str(self.config_path)
-            ),
+            config_path=str(self.config_path),
         )
 
 

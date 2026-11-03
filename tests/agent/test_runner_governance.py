@@ -185,7 +185,9 @@ def test_snip_history_reserves_budget_for_tool_definitions(monkeypatch):
     trimmed = ContextGovernor().snip_history(_governance_config(provider, tools, spec), messages)
 
     contents = [message.get("content") for message in trimmed]
-    assert contents == ["system", "recent two"]
+    assert contents[0] == "system"
+    assert contents[-1] == "recent two"
+    assert any("earlier message(s) omitted" in str(c) for c in contents)
 
 
 async def test_backfill_missing_tool_results_inserts_error():

@@ -37,6 +37,8 @@ from nanodesk.utils.helpers import (
     safe_filename,
     strip_think,
 )
+from nanodesk.utils.identity import copy_file_owner as _copy_file_owner
+from nanodesk.utils.identity import set_private_mode as _set_private_mode
 from nanodesk.utils.subagent_channel_display import scrub_subagent_announce_body
 
 SESSION_CACHE_MAX_SIZE = 128
@@ -54,12 +56,12 @@ _PROVIDER_STATE_RECORD_PREFIX_RE = re.compile(
 )
 _FORK_VOLATILE_METADATA_KEYS = {
     "goal_state",
-    "task_state",
     "pending_user_turn",
     "runtime_checkpoint",
     "session_handle",
     "thread_goal",
     "title",
+    "title_fallback",
     "title_user_edited",
 }
 _WORKSPACE_STATE_DIR = ".nanodesk"
@@ -1190,9 +1192,18 @@ class JsonlSessionStore:
     def _save_unlocked(self, session: Session, *, fsync: bool = False) -> None:
         path = self.get_session_path(session.key)
         tmp_path = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+        # Session transcripts contain conversation text and can hold tool
+        # output with secrets. Create them owner-only and, when a privileged
+        # process rewrites an existing transcript, keep its original owner so
+        # the session never flips to root.
+        previous_stat: os.stat_result | None = None
+        with suppress(OSError):
+            previous_stat = path.stat()
 
         try:
             with open(tmp_path, "x", encoding="utf-8") as f:
+                _set_private_mode(tmp_path)
+                _copy_file_owner(tmp_path, previous_stat)
                 metadata_line = {
                     "_type": "metadata",
                     "key": session.key,
@@ -1651,7 +1662,15 @@ class SessionManager:
         if not session.policy.persist:
             return
 
-        self._store.save(session, fsync=fsync)
+        try:
+            self._store.save(session, fsync=fsync)
+        except PermissionError as exc:
+            from nanodesk.config.loader import explain_permission_denied
+
+            hint = explain_permission_denied(Path(exc.filename or self.sessions_dir), exc)
+            if hint is None:
+                raise
+            raise PermissionError(exc.errno, hint, exc.filename) from exc
         self._remember(session)
 
     def rename_model_preset(self, old_name: str, new_name: str) -> int:

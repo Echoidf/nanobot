@@ -169,7 +169,30 @@ def test_default_instance_preserves_released_gateway_paths() -> None:
 
     assert instance.paths.state_path == config_path.parent / "run" / "gateway.json"
     assert instance.paths.log_path == config_path.parent / "logs" / "gateway.log"
-    assert instance.start_options(port=18790) == GatewayStartOptions(port=18790)
+    # The config is always handed to the child: a child that re-derives it from
+    # its own identity is how a privileged start wrote into the wrong home.
+    assert instance.start_options(port=18790) == GatewayStartOptions(
+        port=18790,
+        config_path=str(config_path),
+    )
+
+
+def test_explicit_config_keeps_named_runtime_files(tmp_path: Path) -> None:
+    """``--config`` must not collapse into the default instance identity.
+
+    The config loader caches the first loaded config, so a resolve that
+    compares against it would see "default" for every instance.
+    """
+    explicit = GatewayInstance.resolve(
+        config_path=tmp_path / "instance" / "config.json",
+        explicit=True,
+    )
+
+    assert explicit.is_default is False
+    assert explicit.paths.state_path.name != "gateway.json"
+    assert explicit.start_options(port=18790).config_path == str(
+        (tmp_path / "instance" / "config.json").resolve()
+    )
 
 
 def test_custom_instance_round_trips_the_same_child_selectors(tmp_path: Path) -> None:

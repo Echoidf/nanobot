@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from loguru import logger
+
 from nanodesk.agent.tools.base import Tool, ToolResult
 from nanodesk.agent.tools.context import ContextAware, current_request_context
 
@@ -130,11 +132,19 @@ class ToolRegistry:
 
         params = self._coerce_params(tool, params)
         if not isinstance(params, dict):
+            preview = str(params)[:200]
+            logger.warning(
+                "Tool '{}' called with non-object parameters (got {}): {!r}",
+                name,
+                type(params).__name__,
+                preview,
+            )
             return tool, params, (
                 ToolResult.error(
                     f"Error: Tool '{name}' parameters must be a JSON object, got "
                     f"{type(params).__name__}. Use named parameters like "
-                    'tool_name(param1="value1", param2="value2") matching the tool schema.'
+                    'tool_name(param1="value1", param2="value2") matching the tool schema. '
+                    f"Received: {preview}"
                 )
             )
 

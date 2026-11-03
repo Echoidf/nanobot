@@ -3,6 +3,13 @@ import { ArrowRight, CheckCircle2, Loader2, Plus, Server, Trash2, Unlink } from 
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { TeamInstanceInfo } from "@/lib/types";
 
@@ -38,11 +45,25 @@ export function InstanceList({
   onRemove: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const [url, setUrl] = useState("");
-  const canSubmit = url.trim().length > 0 && !probing && busy === "";
+  const [bindOpen, setBindOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">
+          {t("assets.teamHub.instances", { defaultValue: "Team instances" })}
+        </h3>
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy !== ""}
+          onClick={() => setBindOpen(true)}
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          {t("assets.teamHub.addInstance", { defaultValue: "Bind a team instance" })}
+        </Button>
+      </div>
+
       {targets.length ? (
         <ul className="grid gap-2 sm:grid-cols-2">
           {targets.map((target) => (
@@ -111,66 +132,26 @@ export function InstanceList({
         <TeamEmptyState
           message={t("assets.teamHub.noInstances", {
             defaultValue:
-              "No team instance yet. Bind one by pasting its asset server address below.",
+              "No team instance yet. Bind one to browse its asset catalog.",
           })}
         />
       )}
 
-      <form
-        className="rounded-panel border border-border/55 bg-settings-surface p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!canSubmit) return;
-          onBind(url.trim());
-          setUrl("");
+      <BindDialog
+        open={bindOpen}
+        onOpenChange={(next) => {
+          setBindOpen(next);
+          if (!next) onProbe("");
         }}
-      >
-        <h3 className="text-sm font-semibold text-foreground">
-          {t("assets.teamHub.addInstance", { defaultValue: "Bind a team instance" })}
-        </h3>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {t("assets.teamHub.addInstanceHint", {
-            defaultValue:
-              "Paste the address of a team's asset server. Its name and id are read from the server, so you do not need to know them.",
-          })}
-        </p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <Input
-            value={url}
-            onChange={(event) => {
-              setUrl(event.target.value);
-              if (probeResult) onProbe("");
-            }}
-            onBlur={() => {
-              const trimmed = url.trim();
-              if (trimmed && !probing) onProbe(trimmed);
-            }}
-            placeholder="http://team-a.internal:18791"
-            inputMode="url"
-            aria-label={t("assets.teamHub.instanceUrl", { defaultValue: "Team instance address" })}
-          />
-          <Button type="submit" size="sm" disabled={!canSubmit}>
-            {probing ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Plus className="h-4 w-4" aria-hidden />
-            )}
-            {t("assets.teamHub.bind", { defaultValue: "Bind" })}
-          </Button>
-        </div>
-        {probeResult ? (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300">
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="truncate">
-              {t("assets.teamHub.probeOk", {
-                defaultValue: "Found {{name}} ({{id}})",
-                name: probeResult.name || probeResult.instance_id,
-                id: probeResult.instance_id,
-              })}
-            </span>
-          </p>
-        ) : null}
-      </form>
+        busy={busy}
+        probing={probing}
+        probeResult={probeResult}
+        onProbe={onProbe}
+        onBind={(url) => {
+          onBind(url);
+          setBindOpen(false);
+        }}
+      />
 
       {targets.some((target) => target.kind === "remote") ? (
         <div className="rounded-panel border border-border/55 bg-settings-surface p-4">
@@ -217,5 +198,93 @@ export function InstanceList({
         })}
       </p>
     </div>
+  );
+}
+
+function BindDialog({
+  open,
+  onOpenChange,
+  busy,
+  probing,
+  probeResult,
+  onProbe,
+  onBind,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  busy: string;
+  probing: boolean;
+  probeResult: TeamInstanceInfo | null;
+  onProbe: (baseUrl: string) => void;
+  onBind: (baseUrl: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [url, setUrl] = useState("");
+  const canSubmit = url.trim().length > 0 && !probing && busy === "";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t("assets.teamHub.addInstance", { defaultValue: "Bind a team instance" })}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!canSubmit) return;
+            onBind(url.trim());
+            setUrl("");
+          }}
+        >
+          <Input
+            value={url}
+            onChange={(event) => {
+              setUrl(event.target.value);
+              if (probeResult) onProbe("");
+            }}
+            onBlur={() => {
+              const trimmed = url.trim();
+              if (trimmed && !probing) onProbe(trimmed);
+            }}
+            placeholder="http://team-a.internal:18791"
+            inputMode="url"
+            aria-label={t("assets.teamHub.instanceUrl", { defaultValue: "Team instance address" })}
+          />
+          {probeResult ? (
+            <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                {t("assets.teamHub.probeOk", {
+                  defaultValue: "Found {{name}} ({{id}})",
+                  name: probeResult.name || probeResult.instance_id,
+                  id: probeResult.instance_id,
+                })}
+              </span>
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+            >
+              {t("common.cancel", { defaultValue: "Cancel" })}
+            </Button>
+            <Button type="submit" size="sm" disabled={!canSubmit}>
+              {probing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden />
+              )}
+              {t("assets.teamHub.bind", { defaultValue: "Bind" })}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

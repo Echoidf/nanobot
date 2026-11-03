@@ -87,6 +87,7 @@ def create_gateway_app(
         return GatewayInstance.resolve(
             config_path=_resolved_config_selector(config),
             workspace=workspace,
+            explicit=config is not None or workspace is not None,
         )
 
     def runtime_for_instance(*, workspace: str | None = None, config: str | None = None):

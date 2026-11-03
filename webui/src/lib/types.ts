@@ -259,6 +259,19 @@ export interface LocalSkillsPayload {
 
 export type TeamAssetKind = "skill" | "mcp";
 
+/** Where a team asset's bytes come from. */
+export type TeamAssetOrigin = "local" | "remote";
+
+export interface TeamLiveAsset {
+  kind: TeamAssetKind;
+  id: string;
+  version: string;
+  description: string;
+  content_hash: string;
+  origin: TeamAssetOrigin;
+  enabled: boolean;
+}
+
 export interface TeamPublishedAsset {
   kind: TeamAssetKind;
   id: string;
@@ -266,6 +279,7 @@ export interface TeamPublishedAsset {
   description: string;
   content_hash: string;
   created_at: number;
+  origin: TeamAssetOrigin;
 }
 
 export interface TeamAssetPublisher {
@@ -275,7 +289,10 @@ export interface TeamAssetPublisher {
   description: string;
   host: string;
   port: number;
-  published: { skills: TeamPublishedAsset[]; mcp: TeamPublishedAsset[] };
+  /** Live local skills/MCP, visible to bound members without publishing. */
+  local: { skills: TeamLiveAsset[]; mcp: TeamLiveAsset[] };
+  /** Fixed-version snapshots (approved remote submissions + legacy publishes). */
+  snapshots: { skills: TeamPublishedAsset[]; mcp: TeamPublishedAsset[] };
 }
 
 export interface TeamAssetSource {
@@ -295,6 +312,8 @@ export interface TeamCatalogAsset {
   installed: boolean;
   installed_version: string;
   upgradable: boolean;
+  origin: TeamAssetOrigin;
+  enabled: boolean;
 }
 
 export interface TeamInstalledAsset {
@@ -308,6 +327,8 @@ export interface TeamInstalledAsset {
   installed_at: number;
 }
 
+export type TeamSubmissionStatus = "pending" | "approved" | "rejected";
+
 export interface TeamSubmission {
   submission_id: string;
   asset_type: TeamAssetKind;
@@ -317,6 +338,30 @@ export interface TeamSubmission {
   note: string;
   created_at: number;
   preview: string;
+  status: TeamSubmissionStatus;
+  reviewer: string;
+  reviewed_at: number;
+}
+
+/** ``gone``: the peer no longer knows this submission (cleared or taken down). */
+export type TeamSubmitStatus = "pending" | "approved" | "rejected" | "gone";
+
+/** One asset this instance submitted to a remote team instance. */
+export interface TeamSubmittedRecord {
+  submission_id: string;
+  kind: TeamAssetKind;
+  id: string;
+  version: string;
+  submitter: string;
+  note: string;
+  target_id: string;
+  target_name: string;
+  target_url: string;
+  submitted_at: number;
+  status: TeamSubmitStatus;
+  status_checked_at: number;
+  /** Non-empty when the last status check could not reach the peer. */
+  check_error?: string;
 }
 
 export interface TeamAssetsPayload {
@@ -324,6 +369,7 @@ export interface TeamAssetsPayload {
   sources: TeamAssetSource[];
   installed: TeamInstalledAsset[];
   submissions: TeamSubmission[];
+  submitted: TeamSubmittedRecord[];
   last_action?: Record<string, unknown>;
 }
 
@@ -401,21 +447,6 @@ export interface SkillInstallPayload extends SkillsPayload {
     already_installed: boolean;
     name: string;
   };
-}
-
-export interface TaskStateWsPayload {
-  active: boolean;
-  status: "active" | "blocked" | "completed" | string;
-  objective?: string;
-  revision: number;
-  updated_at?: string;
-  tasks: Array<{
-    id: string;
-    title: string;
-    status: "pending" | "running" | "completed" | "cancelled" | "blocked" | "failed" | string;
-    note?: string;
-    evidence?: string;
-  }>;
 }
 
 /** Structured UI blob on ``progress`` WS frames; channels may add more ``kind`` values later. */
@@ -1581,11 +1612,6 @@ export type InboundEvent =
       event: "goal_state";
       chat_id: string;
       goal_state: GoalStateWsPayload;
-    }
-  | {
-      event: "task_state";
-      chat_id: string;
-      task_state: TaskStateWsPayload;
     }
   | {
       event: "session_updated";

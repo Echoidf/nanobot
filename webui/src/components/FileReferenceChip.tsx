@@ -59,6 +59,9 @@ export function FileReferenceChip({
     if (event.key !== "Enter" && event.key !== " ") return;
     openPreview(event);
   };
+  // Non-interactive chips (file missing, outside the workspace, or preview
+  // unavailable) must not look like clickable links: render them muted so
+  // users can tell at a glance that they cannot be opened.
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={100}>
       <Tooltip>
@@ -68,22 +71,27 @@ export function FileReferenceChip({
           >
             <span
               data-testid={testId}
+              data-available={interactive ? "true" : "false"}
               aria-label={fullPath}
+              aria-disabled={!interactive || undefined}
               role={interactive ? "button" : undefined}
               tabIndex={interactive ? 0 : undefined}
               onClick={interactive ? openPreview : undefined}
               onKeyDown={interactive ? onKeyDown : undefined}
               className={cn(
                 "inline-flex max-w-full items-baseline gap-[0.28em] font-medium leading-[inherit]",
-                "text-sky-600 transition-colors hover:text-sky-700",
-                "dark:text-sky-300 dark:hover:text-sky-200",
-                interactive && [
-                  "cursor-pointer rounded-compact",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/45",
-                ],
+                "transition-colors",
+                interactive
+                  ? [
+                    "cursor-pointer rounded-compact",
+                    "text-sky-600 hover:text-sky-700",
+                    "dark:text-sky-300 dark:hover:text-sky-200",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/45",
+                  ]
+                  : "cursor-default text-muted-foreground",
               )}
             >
-              <FileReferenceIcon kind={kind} />
+              <FileReferenceIcon kind={kind} dimmed={!interactive} />
               <span
                 data-sheen-text={active ? displayText : undefined}
                 className={cn(
@@ -95,7 +103,16 @@ export function FileReferenceChip({
                 {display === "path" && directory ? (
                   <>
                     <span className="text-muted-foreground/65">{directory}</span>
-                    <span className="font-semibold text-sky-700 dark:text-sky-200">{name}</span>
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        interactive
+                          ? "text-sky-700 dark:text-sky-200"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {name}
+                    </span>
                   </>
                 ) : (
                   displayText
@@ -193,7 +210,7 @@ export function fileKindForPath(path: string): FileReferenceKind {
   }
 }
 
-export function FileReferenceIcon({ kind }: { kind: FileReferenceKind }) {
+export function FileReferenceIcon({ kind, dimmed = false }: { kind: FileReferenceKind; dimmed?: boolean }) {
   if (kind === "python") {
     return (
       <svg
@@ -218,7 +235,10 @@ export function FileReferenceIcon({ kind }: { kind: FileReferenceKind }) {
     return (
       <svg
         aria-hidden
-        className="h-[0.92em] w-[0.92em] shrink-0 translate-y-[0.11em] text-sky-500 dark:text-sky-300"
+        className={cn(
+          "h-[0.92em] w-[0.92em] shrink-0 translate-y-[0.11em]",
+          dimmed ? "text-muted-foreground/70" : "text-sky-500 dark:text-sky-300",
+        )}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -237,7 +257,10 @@ export function FileReferenceIcon({ kind }: { kind: FileReferenceKind }) {
     return (
       <svg
         aria-hidden
-        className="h-[0.92em] w-[0.92em] shrink-0 translate-y-[0.11em] text-sky-500 dark:text-sky-300"
+        className={cn(
+          "h-[0.92em] w-[0.92em] shrink-0 translate-y-[0.11em]",
+          dimmed ? "text-muted-foreground/70" : "text-sky-500 dark:text-sky-300",
+        )}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -254,7 +277,10 @@ export function FileReferenceIcon({ kind }: { kind: FileReferenceKind }) {
   return (
     <svg
       aria-hidden
-      className="h-[0.96em] w-[0.96em] shrink-0 translate-y-[0.12em] text-sky-500 dark:text-sky-300"
+      className={cn(
+        "h-[0.96em] w-[0.96em] shrink-0 translate-y-[0.12em]",
+        dimmed ? "text-muted-foreground/70" : "text-sky-500 dark:text-sky-300",
+      )}
       viewBox="0 0 24 24"
       fill="none"
     >

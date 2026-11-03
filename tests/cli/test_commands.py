@@ -96,6 +96,10 @@ class _GatewayAgentContractStub:
     def pending_local_trigger_ids_for_session(_session_key: str) -> set[str]:
         return set()
 
+    def schedule_background(self, _awaitable) -> None:
+        """Accept background work scheduled by gateway assembly (no-op)."""
+        return None
+
     async def submit_local_trigger_turn(
         self,
         _msg: InboundMessage,

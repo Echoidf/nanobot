@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   approveTeamSubmission,
+  deleteTeamSubmission,
   fetchSkills,
   fetchTeamAssets,
   fetchTeamCatalog,
+  installPublishedToLocal,
   installTeamAsset,
   probeTeamInstance,
-  publishTeamAsset,
+  refreshTeamSubmitted,
   removeTeamAssetSource,
   rejectTeamSubmission,
   saveTeamAssetSource,
   submitTeamAsset,
+  unpublishTeamAsset,
 } from "@/lib/api";
 import { notifySkillsChanged } from "@/lib/skill-events";
 import type {
@@ -22,14 +26,17 @@ import type {
   TeamInstanceInfo,
 } from "@/lib/types";
 import { useClient } from "@/providers/ClientProvider";
+import { Button } from "@/components/ui/button";
 
 import { BrowseSection } from "./teamHub/BrowseSection";
 import { InstanceDetail } from "./teamHub/InstanceDetail";
 import { InstanceList, type InstanceTarget } from "./teamHub/InstanceList";
-import { PublishSection, type PublishRequest } from "./teamHub/PublishSection";
+import { LocalAssetsSection } from "./teamHub/LocalAssetsSection";
 import { ReviewSection } from "./teamHub/ReviewSection";
-import { ShareSection, type SubmitRequest } from "./teamHub/ShareSection";
-import { describeError } from "./teamHub/shared";
+import { SnapshotsSection, type SnapshotAction } from "./teamHub/SnapshotsSection";
+import { SubmitDialog, type SubmitRequest } from "./teamHub/SubmitDialog";
+import { SubmittedSection } from "./teamHub/SubmittedSection";
+import { describeTeamError } from "./teamHub/shared";
 
 const SELF_ID = "__self__";
 
@@ -38,9 +45,10 @@ const SELF_ID = "__self__";
  *
  * Two levels on purpose: browsing and sharing are meaningless without a
  * target instance, so they live *inside* a selected instance rather than
- * beside the instance list. This instance's own publishing and review live
- * under its own "self" entry, since they describe what we serve, not what
- * we consume.
+ * beside the instance list. This instance's own local assets, approved
+ * snapshots and review history live under its own "self" entry. There is
+ * no publish step: local assets are visible to bound members as-is, and
+ * remote assets become visible once a reviewer approves them.
  */
 export function TeamAssetsPanel({
   localSkillNames,
@@ -64,11 +72,13 @@ export function TeamAssetsPanel({
   const [notice, setNotice] = useState("");
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<TeamInstanceInfo | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const failed = (reason: unknown) =>
     setError(
-      describeError(
+      describeTeamError(
         reason,
+        t,
         t("assets.teamHub.failed", { defaultValue: "The team asset request failed." }),
       ),
     );
@@ -110,7 +120,11 @@ export function TeamAssetsPanel({
   const publisher = payload?.publisher;
   const sources = payload?.sources ?? [];
   const submissions = payload?.submissions ?? [];
+  const submitted = payload?.submitted ?? [];
   const installedCount = payload?.installed?.length ?? 0;
+  const pendingCount = submissions.filter((item) => item.status === "pending").length;
+  const snapshotCount =
+    (publisher?.snapshots.skills.length ?? 0) + (publisher?.snapshots.mcp.length ?? 0);
 
   const targets = useMemo<InstanceTarget[]>(() => {
     const rows: InstanceTarget[] = [];
@@ -125,8 +139,9 @@ export function TeamAssetsPanel({
         baseUrl: `http://${publisher.host}:${publisher.port}`,
         description: publisher.description,
         publishedCount:
-          publisher.published.skills.length + publisher.published.mcp.length,
-        pendingCount: submissions.length,
+          (publisher.snapshots.skills.length ?? 0) +
+          (publisher.snapshots.mcp.length ?? 0),
+        pendingCount,
       });
     }
     for (const source of sources) {
@@ -139,7 +154,7 @@ export function TeamAssetsPanel({
       });
     }
     return rows;
-  }, [publisher, sources, submissions.length, t]);
+  }, [publisher, sources, pendingCount, t]);
 
   const target = targets.find((row) => row.id === selected) ?? null;
 
@@ -148,26 +163,33 @@ export function TeamAssetsPanel({
     return target.kind === "self"
       ? [
           {
-            value: "publish",
-            label: t("assets.teamHub.publish", { defaultValue: "Publish" }),
+            value: "local",
+            label: t("assets.teamHub.localAssets", { defaultValue: "Local assets" }),
+          },
+          {
+            value: "approved",
+            label: t("assets.teamHub.approved", {
+              defaultValue: "Approved ({{count}})",
+              count: snapshotCount,
+            }),
           },
           {
             value: "review",
-            label: `${t("assets.teamHub.review", { defaultValue: "Review" })}${
-              submissions.length ? ` (${submissions.length})` : ""
-            }`,
+            label: t("assets.teamHub.review", { defaultValue: "Review" }) +
+              (pendingCount ? ` (${pendingCount})` : ""),
           },
         ]
-      : [
-          { value: "browse", label: t("assets.teamHub.browse", { defaultValue: "Browse" }) },
-          { value: "share", label: t("assets.teamHub.share", { defaultValue: "Share" }) },
-        ];
-  }, [target, submissions.length, t]);
+      : [];
+  }, [target, snapshotCount, pendingCount, t]);
 
   // Default to the first section whenever the selected instance changes.
   useEffect(() => {
     if (!target) {
       setSection("");
+      return;
+    }
+    if (target.kind === "remote") {
+      setSection("browse");
       return;
     }
     setSection((current) =>
@@ -255,10 +277,48 @@ export function TeamAssetsPanel({
     });
   };
 
+  const installHere = (asset: SnapshotAction) => {
+    void run(`install-local:${asset.kind}:${asset.id}@${asset.version}`, async () => {
+      const next = await installPublishedToLocal(client, {
+        kind: asset.kind,
+        asset_id: asset.id,
+        version: asset.version,
+      });
+      notifySkillsChanged(await fetchSkills(getToken()));
+      setNotice(
+        t("assets.teamHub.installedHere", {
+          defaultValue: "Installed {{id}} at {{version}} on this instance.",
+          id: asset.id,
+          version: asset.version,
+        }),
+      );
+      if (asset.kind === "mcp") onRestart();
+      return next;
+    });
+  };
+
+  const unpublish = (asset: SnapshotAction) => {
+    void run("unpublish", async () => {
+      const next = await unpublishTeamAsset(client, {
+        kind: asset.kind,
+        asset_id: asset.id,
+        version: asset.version,
+      });
+      setNotice(
+        t("assets.teamHub.unpublished", {
+          defaultValue: "Took down {{id}} at {{version}} for everyone.",
+          id: asset.id,
+          version: asset.version,
+        }),
+      );
+      return next;
+    });
+  };
+
   const share = (input: SubmitRequest) => {
     if (target?.kind !== "remote") return;
     void run("submit", async () => {
-      await submitTeamAsset(client, { source_id: target.id, ...input });
+      const next = await submitTeamAsset(client, { source_id: target.id, ...input });
       setNotice(
         t("assets.teamHub.submitted", {
           defaultValue: "Submitted {{id}} to {{target}} for review.",
@@ -266,18 +326,18 @@ export function TeamAssetsPanel({
           target: target.name,
         }),
       );
-      return undefined;
+      return next;
     });
   };
 
-  const publish = (input: PublishRequest) => {
-    void run("publish", () => publishTeamAsset(client, input));
+  const refreshSubmitted = () => {
+    void run("refresh-status", () => refreshTeamSubmitted(client));
   };
 
   return (
     <div className="flex flex-col gap-5">
       {error ? (
-        <p className="rounded-control border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <p className="rounded-control border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
           {error}
         </p>
       ) : null}
@@ -295,31 +355,54 @@ export function TeamAssetsPanel({
           onSelectTab={setSection}
           onBack={() => setSelected(null)}
         >
-          {section === "browse" ? (
-            <BrowseSection
-              catalog={target.id === catalog?.source_id ? catalog : null}
-              busy={busy}
-              loading={loading || busy === "catalog"}
-              onReload={() => void loadCatalog(target.id)}
-              onInstall={install}
+          {target.kind === "remote" ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {t("assets.teamHub.remoteHint", {
+                    defaultValue:
+                      "Local assets of this instance are listed automatically; approved remote assets appear with a Remote badge.",
+                  })}
+                </p>
+                <Button type="button" size="sm" onClick={() => setShareOpen(true)}>
+                  <Send className="h-4 w-4" aria-hidden />
+                  {t("assets.teamHub.shareAction", { defaultValue: "Share an asset" })}
+                </Button>
+              </div>
+              <BrowseSection
+                catalog={target.id === catalog?.source_id ? catalog : null}
+                busy={busy}
+                loading={loading || busy === "catalog"}
+                onReload={() => void loadCatalog(target.id)}
+                onInstall={install}
+              />
+              <SubmittedSection
+                records={submitted.filter((row) => row.target_id === target.id)}
+                busy={busy}
+                onRefresh={refreshSubmitted}
+              />
+              <SubmitDialog
+                open={shareOpen}
+                onOpenChange={setShareOpen}
+                targetName={target.name}
+                localSkillNames={localSkillNames}
+                localMcpNames={localMcpNames}
+                busy={busy}
+                onSubmit={share}
+              />
+            </div>
+          ) : null}
+          {section === "local" ? (
+            <LocalAssetsSection
+              assets={publisher?.local ?? { skills: [], mcp: [] }}
             />
           ) : null}
-          {section === "share" ? (
-            <ShareSection
-              targetName={target.name}
-              localSkillNames={localSkillNames}
-              localMcpNames={localMcpNames}
+          {section === "approved" ? (
+            <SnapshotsSection
+              snapshots={publisher?.snapshots ?? { skills: [], mcp: [] }}
               busy={busy}
-              onSubmit={share}
-            />
-          ) : null}
-          {section === "publish" ? (
-            <PublishSection
-              localSkillNames={localSkillNames}
-              localMcpNames={localMcpNames}
-              published={publisher?.published ?? { skills: [], mcp: [] }}
-              busy={busy}
-              onPublish={publish}
+              onInstall={installHere}
+              onUnpublish={unpublish}
             />
           ) : null}
           {section === "review" ? (
@@ -335,6 +418,9 @@ export function TeamAssetsPanel({
                 void run("review", () =>
                   rejectTeamSubmission(client, { submission_id: submissionId }),
                 )
+              }
+              onDelete={(submissionId) =>
+                void run("review", () => deleteTeamSubmission(client, submissionId))
               }
             />
           ) : null}

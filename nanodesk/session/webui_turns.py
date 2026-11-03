@@ -20,7 +20,6 @@ from nanodesk.bus.outbound_events import (
     GoalStatusEvent,
     RuntimeModelUpdatedEvent,
     SessionUpdatedEvent,
-    TaskStateSyncEvent,
     TurnEndEvent,
     TurnModelUpdatedEvent,
     UserInputEvent,
@@ -33,7 +32,6 @@ from nanodesk.bus.runtime_events import (
     RuntimeEventContext,
     RuntimeModelChanged,
     SessionTurnStarted,
-    TaskStateChanged,
     TurnCompleted,
     TurnRunStatusChanged,
     TurnRuntimeAdmitted,
@@ -50,7 +48,6 @@ from nanodesk.session.session_messages import (
     SessionMessageEnvelope,
     session_message_envelope,
 )
-from nanodesk.session.task_state import task_state_ws_blob
 from nanodesk.utils.helpers import strip_think, truncate_text
 from nanodesk.utils.llm_runtime import LLMRuntime
 from nanodesk.webui.metadata import (
@@ -62,8 +59,13 @@ from nanodesk.webui.transcript import append_session_message_input
 WEBUI_SESSION_METADATA_KEY = "webui"
 WEBUI_TITLE_METADATA_KEY = "title"
 WEBUI_TITLE_USER_EDITED_METADATA_KEY = "title_user_edited"
+# Set when the stored title is a deterministic fallback so a later turn can
+# still replace it with a generated one.
+WEBUI_TITLE_FALLBACK_METADATA_KEY = "title_fallback"
 TITLE_MAX_CHARS = 60
-TITLE_GENERATION_MAX_TOKENS = 96
+# Generous enough that reasoning models can spend their thinking budget and
+# still emit visible content; a tight budget makes them return empty content.
+TITLE_GENERATION_MAX_TOKENS = 512
 TITLE_GENERATION_REASONING_EFFORT = "none"
 
 # Latest active turn projection per ``chat_id`` (websocket only). It survives browser refresh
@@ -144,6 +146,21 @@ def clean_generated_title(raw: str | None) -> str:
     return text
 
 
+def fallback_title_from_text(raw: str | None) -> str:
+    """Deterministic title derived from the first user message.
+
+    Used when LLM title generation is unavailable so a session is never left
+    without a name while later turns retry the generated title.
+    """
+    text = strip_think(raw or "").strip()
+    if not text:
+        return ""
+    text = text.splitlines()[0].strip()
+    if not text or text.startswith("/"):
+        return ""
+    return clean_generated_title(text)
+
+
 def _title_inputs(session: Session) -> tuple[str, str]:
     user_text = ""
     assistant_text = ""
@@ -176,14 +193,25 @@ async def maybe_generate_webui_title(
     provider: LLMProvider,
     model: str,
 ) -> bool:
-    """Generate and persist a short title for WebUI-owned sessions only."""
+    """Generate and persist a short title for WebUI-owned sessions only.
+
+    Falls back to a deterministic first-message title when generation fails, so
+    the session keeps a usable name and later turns can still upgrade it.
+    """
     session = sessions.get_or_create(session_key)
     if session.metadata.get(WEBUI_SESSION_METADATA_KEY) is not True:
         return False
     if session.metadata.get(WEBUI_TITLE_USER_EDITED_METADATA_KEY) is True:
         return False
+    awaiting_generated_title = (
+        session.metadata.get(WEBUI_TITLE_FALLBACK_METADATA_KEY) is True
+    )
     current_title = session.metadata.get(WEBUI_TITLE_METADATA_KEY)
-    if isinstance(current_title, str) and current_title.strip():
+    if (
+        isinstance(current_title, str)
+        and current_title.strip()
+        and not awaiting_generated_title
+    ):
         cleaned_current_title = clean_generated_title(current_title)
         if cleaned_current_title:
             if cleaned_current_title != current_title:
@@ -229,18 +257,45 @@ async def maybe_generate_webui_title(
             retry_mode="standard",
         )
     except Exception:
-        logger.debug("Failed to generate webui session title for {}", session_key, exc_info=True)
-        return False
+        logger.warning("Failed to generate webui session title for {}", session_key, exc_info=True)
+        return _persist_webui_title(
+            sessions,
+            session,
+            fallback_title_from_text(user_text),
+            fallback=True,
+        )
 
     title = clean_generated_title(response.content)
     if not title or title.lower().startswith("error"):
-        logger.debug(
+        logger.warning(
             "WebUI title generation returned no usable title for {} (finish_reason={})",
             session_key,
             response.finish_reason,
         )
+        return _persist_webui_title(
+            sessions,
+            session,
+            fallback_title_from_text(user_text),
+            fallback=True,
+        )
+    return _persist_webui_title(sessions, session, title, fallback=False)
+
+
+def _persist_webui_title(
+    sessions: SessionManager,
+    session: Session,
+    title: str,
+    *,
+    fallback: bool,
+) -> bool:
+    """Store a session title and record whether later turns may replace it."""
+    if not title:
         return False
     session.metadata[WEBUI_TITLE_METADATA_KEY] = title
+    if fallback:
+        session.metadata[WEBUI_TITLE_FALLBACK_METADATA_KEY] = True
+    else:
+        session.metadata.pop(WEBUI_TITLE_FALLBACK_METADATA_KEY, None)
     sessions.save(session)
     return True
 
@@ -262,6 +317,54 @@ async def maybe_generate_webui_title_after_turn(
         provider=provider,
         model=model,
     )
+
+
+async def backfill_webui_titles(
+    *,
+    sessions: SessionManager,
+    provider: LLMProvider,
+    model: str,
+) -> int:
+    """Name persisted WebUI sessions that still lack a generated title.
+
+    Covers sessions named before generation worked and sessions whose turns
+    were cancelled before completion-time naming could run. Sessions that only
+    hold a deterministic fallback title are upgraded to generated ones.
+    """
+    named = 0
+    for info in sessions.list_sessions():
+        key = info.get("key")
+        if not isinstance(key, str) or not key.startswith("websocket:"):
+            continue
+        payload = sessions.read_session_metadata(key)
+        metadata_value = payload.get("metadata") if payload is not None else None
+        metadata = (
+            cast(dict[str, Any], metadata_value)
+            if isinstance(metadata_value, dict)
+            else None
+        )
+        if metadata is None or metadata.get(WEBUI_SESSION_METADATA_KEY) is not True:
+            continue
+        title = metadata.get(WEBUI_TITLE_METADATA_KEY)
+        if (
+            isinstance(title, str)
+            and title.strip()
+            and metadata.get(WEBUI_TITLE_FALLBACK_METADATA_KEY) is not True
+        ):
+            continue
+        try:
+            if await maybe_generate_webui_title(
+                sessions=sessions,
+                session_key=key,
+                provider=provider,
+                model=model,
+            ):
+                named += 1
+        except Exception:
+            logger.warning("Failed to backfill WebUI title for {}", key, exc_info=True)
+    if named:
+        logger.info("Backfilled titles for {} WebUI sessions", named)
+    return named
 
 
 def websocket_turn_wall_started_at(chat_id: str) -> float | None:
@@ -542,10 +645,6 @@ class WebuiTurnCoordinator:
                 GoalStateChanged,
             ),
             runtime_events.subscribe(
-                self._handle_task_state_changed,
-                TaskStateChanged,
-            ),
-            runtime_events.subscribe(
                 self._handle_runtime_model_changed,
                 RuntimeModelChanged,
             ),
@@ -573,6 +672,9 @@ class WebuiTurnCoordinator:
         return ctx.channel == "websocket"
 
     async def _handle_user_input_accepted(self, event: UserInputAccepted) -> None:
+        if event.context.channel == "websocket":
+            self._schedule_early_webui_title(event)
+            return
         envelope = session_message_envelope(event.context.metadata)
         session_key = event.context.session_key
         if (
@@ -614,6 +716,44 @@ class WebuiTurnCoordinator:
                 provenance={"session_message": public_metadata},
             ),
         ))
+
+    def _schedule_early_webui_title(self, event: UserInputAccepted) -> None:
+        """Name a WebUI session as soon as its first message arrives.
+
+        Completion-time naming can be minutes away for long turns and never
+        runs for cancelled turns, so seed a deterministic title immediately;
+        a completed turn upgrades it to a generated one.
+        """
+        metadata = dict(event.context.metadata or {})
+        if metadata.get(WEBUI_SESSION_METADATA_KEY) is not True:
+            return
+        session_key = event.context.session_key
+        chat_id = str(event.context.chat_id or "").strip()
+        if not session_key or not chat_id:
+            return
+
+        async def _seed_title() -> None:
+            session = self.sessions.get_or_create(session_key)
+            mark_webui_session(session, metadata)
+            if session.metadata.get(WEBUI_TITLE_USER_EDITED_METADATA_KEY) is True:
+                return
+            current_title = session.metadata.get(WEBUI_TITLE_METADATA_KEY)
+            if isinstance(current_title, str) and current_title.strip():
+                return
+            if not _persist_webui_title(
+                self.sessions,
+                session,
+                fallback_title_from_text(event.content),
+                fallback=True,
+            ):
+                return
+            await self._publish_session_metadata_updated(
+                channel=event.context.channel,
+                chat_id=chat_id,
+                metadata=metadata,
+            )
+
+        self.schedule_background(_seed_title())
 
     def _handle_session_turn_started(self, event: SessionTurnStarted) -> None:
         if not self._is_websocket_event(event.context):
@@ -676,23 +816,6 @@ class WebuiTurnCoordinator:
                 chat_id=cid,
                 event=GoalStateSyncEvent(
                     goal_state=goal_state_ws_blob(event.session_metadata),
-                ),
-                metadata=event.context.metadata,
-            ),
-        )
-
-    async def _handle_task_state_changed(self, event: TaskStateChanged) -> None:
-        if not self._is_websocket_event(event.context):
-            return
-        cid = str(event.context.chat_id or "").strip()
-        if not cid:
-            return
-        await self.bus.publish_outbound(
-            outbound_message_for_event(
-                channel=event.context.channel,
-                chat_id=cid,
-                event=TaskStateSyncEvent(
-                    task_state=task_state_ws_blob(event.session_metadata),
                 ),
                 metadata=event.context.metadata,
             ),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import pwd
 import re
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from nanodesk.gateway import GatewayStartOptions, build_gateway_command
+from nanodesk.utils.identity import effective_home_dir
 
 ServiceManagerKind = Literal["auto", "systemd", "launchd"]
 
@@ -53,7 +55,7 @@ class GatewayServiceInstaller:
     ) -> None:
         self.platform_name = platform_name or _platform_name()
         self._subprocess_run = subprocess_run
-        self.home = home or Path.home()
+        self.home = home or effective_home_dir()
 
     def install(self, options: GatewayServiceOptions, *, dry_run: bool = False) -> GatewayServiceResult:
         manager = self._resolve_manager(options.manager)
@@ -141,6 +143,7 @@ class GatewayServiceInstaller:
             "Label": label,
             "ProgramArguments": build_gateway_command(options.python_executable, options.start),
             "WorkingDirectory": _working_directory_text(options.start),
+            "EnvironmentVariables": _service_environment(),
             "RunAtLoad": bool(options.enable),
             "KeepAlive": {"SuccessfulExit": False},
             "StandardOutPath": str(stdout_path),
@@ -215,13 +218,13 @@ def _platform_name() -> str:
 def _working_directory(options: GatewayStartOptions) -> Path:
     if options.workspace:
         return Path(options.workspace).expanduser()
-    return Path.home()
+    return effective_home_dir()
 
 
 def _working_directory_text(options: GatewayStartOptions) -> str:
     if options.workspace:
         return os.path.expanduser(options.workspace)
-    return str(Path.home())
+    return str(effective_home_dir())
 
 
 def _systemd_unit_name(name: str) -> str:
@@ -244,6 +247,8 @@ def _safe_service_name(name: str) -> str:
 
 
 def _launchd_domain() -> str:
+    # launchd domains key on the *real* uid of the session that owns the GUI,
+    # which differs from the effective uid under a setuid/sudo launch.
     getuid = getattr(os, "getuid", None)
     if getuid is None:
         return "gui/current"
@@ -257,20 +262,28 @@ def _systemd_unit_content(
     working_directory: str,
 ) -> str:
     quoted_command = " ".join(_systemd_quote(part) for part in command)
-    return "\n".join(
+    lines = [
+        "[Unit]",
+        f"Description={description}",
+        "After=network-online.target",
+        "Wants=network-online.target",
+        "",
+        "[Service]",
+        "Type=simple",
+        f"WorkingDirectory={_systemd_quote(str(working_directory))}",
+        "Environment=PYTHONUNBUFFERED=1",
+    ]
+    # A user unit must never inherit a HOME that disagrees with the running
+    # account; otherwise nanodesk writes its config/sessions into a directory
+    # this user cannot edit afterwards.
+    home = _current_home()
+    if home:
+        lines.append(f"Environment=HOME={_systemd_quote(home)}")
+    lines.extend(
         [
-            "[Unit]",
-            f"Description={description}",
-            "After=network-online.target",
-            "Wants=network-online.target",
-            "",
-            "[Service]",
-            "Type=simple",
-            f"WorkingDirectory={_systemd_quote(str(working_directory))}",
             f"ExecStart={quoted_command}",
             "Restart=always",
             "RestartSec=10",
-            "Environment=PYTHONUNBUFFERED=1",
             "NoNewPrivileges=yes",
             "",
             "[Install]",
@@ -278,6 +291,29 @@ def _systemd_unit_content(
             "",
         ]
     )
+    return "\n".join(lines)
+
+
+def _current_home() -> str | None:
+    """Return the effective user's ``HOME``, or ``None`` when it is unknown."""
+    try:
+        return pwd.getpwuid(os.geteuid()).pw_dir
+    except (AttributeError, KeyError):
+        home = os.environ.get("HOME")
+        return home or None
+
+
+def _service_environment() -> dict[str, str]:
+    """Environment pinned in a service definition.
+
+    ``HOME`` is pinned so the gateway always resolves ``~/.nanodesk`` to the
+    account the service runs as, whatever the supervisor happened to export.
+    """
+    env = {"PYTHONUNBUFFERED": "1"}
+    home = _current_home()
+    if home:
+        env["HOME"] = home
+    return env
 
 
 def _systemd_quote(value: str) -> str:

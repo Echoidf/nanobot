@@ -37,6 +37,7 @@ from nanodesk.team_assets.bundles import validate_skill_markdown
 from nanodesk.team_assets.store import (
     AssetKind,
     normalize_asset_id,
+    normalize_submission_id,
     normalize_version,
 )
 
@@ -47,6 +48,7 @@ __all__ = [
     "download_team_skill_asset",
     "fetch_team_catalog",
     "fetch_team_info",
+    "fetch_team_submission_status",
     "submit_team_asset",
 ]
 
@@ -143,13 +145,13 @@ def _str_field(payload: dict[str, Any], key: str, *, required: bool = True) -> s
     return raw
 
 
-def _catalog_entries(payload: dict[str, Any], key: str) -> list[dict[str, str]]:
+def _catalog_entries(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
     raw = payload.get(key)
     if raw is None:
         return []
     if not isinstance(raw, list):
         raise TeamAssetClientError(f"team instance payload has an invalid {key} list", status=502)
-    entries: list[dict[str, str]] = []
+    entries: list[dict[str, Any]] = []
     for item in cast(list[Any], raw):
         if not isinstance(item, dict):
             continue
@@ -162,12 +164,24 @@ def _catalog_entries(payload: dict[str, Any], key: str) -> list[dict[str, str]]:
             continue
         description = data.get("description")
         content_hash = data.get("content_hash")
+        origin = data.get("origin")
+        if origin not in ("local", "remote"):
+            raise TeamAssetClientError(
+                "team instance returned an invalid catalog entry", status=502
+            )
+        enabled = data.get("enabled")
+        if not isinstance(enabled, bool):
+            raise TeamAssetClientError(
+                "team instance returned an invalid catalog entry", status=502
+            )
         entries.append(
             {
                 "id": asset_id,
                 "version": version,
                 "description": description if isinstance(description, str) else "",
                 "content_hash": content_hash if isinstance(content_hash, str) else "",
+                "origin": origin,
+                "enabled": enabled,
             }
         )
     return entries
@@ -386,4 +400,29 @@ async def submit_team_asset(
     return {
         "submission_id": _str_field(payload, "submission_id"),
         "status": _str_field(payload, "status", required=False),
+    }
+
+
+async def fetch_team_submission_status(
+    base_url: str, submission_id: str
+) -> dict[str, Any]:
+    """Return one submission's review state, or ``None`` when gone.
+
+    ``gone`` means the peer no longer knows this submission (rejected and
+    cleared, or its asset was taken down): the caller records it as such
+    instead of treating it as a transport failure.
+    """
+    root = _normalize_base_url(base_url)
+    try:
+        sid = normalize_submission_id(submission_id)
+    except ValueError as exc:
+        raise TeamAssetClientError(str(exc), status=400) from exc
+    async with _client() as client:
+        response = await _request(client, f"{root}/v1/team/submissions/{sid}")
+    if response.status_code == 404:
+        return {"submission_id": sid, "status": "gone"}
+    payload = _json_object(response)
+    return {
+        "submission_id": _str_field(payload, "submission_id"),
+        "status": _str_field(payload, "status", required=False) or "pending",
     }

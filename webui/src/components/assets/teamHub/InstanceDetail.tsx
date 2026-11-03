@@ -62,7 +62,7 @@ export function InstanceDetail({
         value={active}
         onChange={onSelectTab}
         options={tabs}
-        className="self-start"
+        className={tabs.length > 1 ? "self-start" : "hidden"}
       />
 
       {children}

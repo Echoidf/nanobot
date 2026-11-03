@@ -36,7 +36,6 @@ import type {
   OutboundMedia,
   SessionMention,
   GoalStateWsPayload,
-  TaskStateWsPayload,
   MessageDeliveryStatus,
   UIMediaAttachment,
   UIMessage,
@@ -258,7 +257,6 @@ export function useNanodeskStream(
   runStartedAt: number | null;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
-   taskState: TaskStateWsPayload | undefined;
   send: (
     content: string,
     images?: SendAttachment[],
@@ -288,7 +286,6 @@ export function useNanodeskStream(
   /** Unix epoch seconds when the current user turn started; cleared on ``idle``. */
   const [runStartedAt, setRunStartedAt] = useState<number | null>(initialRunStartedAt);
   const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
-  const [taskState, setTaskState] = useState<TaskStateWsPayload | undefined>(undefined);
   const [streamError, setStreamError] = useState<StreamError | null>(null);
   const buffer = useRef<StreamBuffer | null>(null);
   const activeAssistantRef = useRef<ActiveAssistantCursor | null>(null);
@@ -688,7 +685,6 @@ export function useNanodeskStream(
     setStreamError(null);
     setRunStartedAt(restoredRunStartedAt);
     setGoalState(chatId ? client.getGoalState(chatId) : undefined);
-    setTaskState(chatId ? client.getTaskState(chatId) : undefined);
     buffer.current = null;
     activeAssistantRef.current = null;
     closedAssistantStreamIdsRef.current.clear();
@@ -865,13 +861,6 @@ export function useNanodeskStream(
         return;
       }
 
-      if (ev.event === "task_state") {
-        setTaskState((current) => {
-          if (current && ev.task_state.revision < current.revision) return current;
-          return ev.task_state;
-        });
-        return;
-      }
 
       if (ev.event === "goal_status") {
         if (ev.status === "running" && typeof ev.started_at === "number") {
@@ -1296,7 +1285,6 @@ export function useNanodeskStream(
     isStreaming,
     runStartedAt,
     goalState,
-    taskState,
     send,
     transcribeAudio,
     stop,

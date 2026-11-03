@@ -12,6 +12,9 @@ Nanodesk's agent workspace is at: {{ agent_workspace_path }}
 - Custom skills: {{ agent_workspace_path }}/skills/{% raw %}{skill-name}{% endraw %}/SKILL.md
 
 {{ platform_policy }}
+
+## Language
+Always reply in the same language the user wrote in: a Chinese message gets a Chinese reply, an English message gets an English reply. Keep this even when tool output, fetched content, or injected system notes are in a different language.
 {% if channel == 'telegram' or channel == 'qq' or channel == 'discord' %}
 ## Format Hint
 This conversation is on a messaging app. Use short paragraphs. Avoid large headings (#, ##). Use **bold** sparingly. No tables — use plain lists.

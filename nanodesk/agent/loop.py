@@ -83,6 +83,11 @@ from nanodesk.session.goal_state import (
     sustained_goal_active,
 )
 from nanodesk.session.history_visibility import HIDDEN_HISTORY_META
+from nanodesk.session.input_request import (
+    clear_pending_input_request,
+    get_pending_input_request,
+    save_pending_input_request,
+)
 from nanodesk.session.keys import UNIFIED_SESSION_KEY, remember_last_channel
 from nanodesk.session.manager import SESSION_CACHE_MAX_SIZE, Session, SessionManager
 from nanodesk.session.model_selection import (
@@ -95,10 +100,6 @@ from nanodesk.session.model_selection import (
     reasoning_effort_from_metadata,
 )
 from nanodesk.session.summary import SessionSummary
-from nanodesk.session.task_state import (
-    task_list_active,
-    task_state_runtime_lines,
-)
 from nanodesk.triggers.local_turns import LocalTriggerTurnCoordinator
 from nanodesk.utils.artifacts import generated_image_paths_from_messages
 from nanodesk.utils.cancellation import task_is_cancelling
@@ -1229,14 +1230,12 @@ class AgentLoop:
         def _goal_continue() -> str | None:
             _goal_lines = goal_state_runtime_lines(session.metadata if session is not None else None)
             if not _goal_lines:
-                _goal_lines = task_state_runtime_lines(session.metadata if session is not None else None)
-            if not _goal_lines:
                 return None
             return (
-                "You have active work:\n\n"
+                "You have an active sustained goal:\n\n"
                 + "\n".join(_goal_lines)
-                + "\n\nContinue it using your tools, or report what is blocking you. "
-                "Handle a user message first whenever one is available."
+                + "\n\nPlease continue working toward the objective using your tools, "
+                "or call update_goal with action='complete' if the work is truly finished."
             )
 
         session_metadata = session.metadata if session is not None else None
@@ -1289,10 +1288,7 @@ class AgentLoop:
                     metadata=session_metadata,
                     message_metadata=metadata,
                 ),
-                goal_active_predicate=lambda: (
-                    sustained_goal_active(session.metadata)
-                    or task_list_active(session.metadata)
-                ) if session is not None else False,
+                goal_active_predicate=lambda: sustained_goal_active(session.metadata) if session is not None else False,
                 goal_continue_message=_goal_continue,
                 finalize_on_max_iterations=turn_continuation.should_finalize_on_max_iterations(
                     pending_queue_available=pending_queue is not None and session is not None,
@@ -1309,6 +1305,9 @@ class AgentLoop:
         self._last_usage = result.usage
         if session is not None and not ephemeral:
             session.provider_state = result.provider_state
+            if result.pending_input_request is not None:
+                save_pending_input_request(session.metadata, result.pending_input_request)
+                self.sessions.save(session)
         if result.stop_reason == "max_iterations":
             logger.warning("Max iterations ({}) reached", self.max_iterations)
             should_stream = turn_continuation.should_stream_budget_response(
@@ -1924,6 +1923,55 @@ class AgentLoop:
             self.sessions.save(session)
         if self._restore_pending_user_turn(session):
             self.sessions.save(session)
+        if ctx.kind is TurnKind.USER and ctx.msg.channel != "system":
+            self._resume_pending_input_request(ctx)
+
+    def _resume_pending_input_request(self, ctx: TurnContext) -> None:
+        """Resume a suspended turn: the user message answers the pending question.
+
+        Appends the answer as the suspended tool call's result immediately
+        after its assistant message (keeps OpenAI tool ordering legal), then
+        clears the pending marker. The current user message is still persisted
+        normally afterwards, so the transcript keeps both.
+        """
+        session = ctx.require_session()
+        pending = get_pending_input_request(session.metadata)
+        if pending is None:
+            return
+        tool_call_id = str(pending.get("tool_call_id") or "")
+        if not tool_call_id:
+            clear_pending_input_request(session.metadata)
+            return
+        answer = (ctx.msg.content or "").strip()
+        if not answer:
+            return
+        insert_at: int | None = None
+        for idx, message in enumerate(session.messages):
+            if message.get("role") != "assistant":
+                continue
+            for tc in message.get("tool_calls") or []:
+                if isinstance(tc, dict) and str(tc.get("id") or "") == tool_call_id:
+                    insert_at = idx + 1
+                    break
+            if insert_at is not None:
+                break
+        tool_message: dict[str, Any] = {
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "name": str(pending.get("tool_name") or "request_user_input"),
+            "content": answer,
+        }
+        if insert_at is None:
+            session.messages.append(tool_message)
+        else:
+            session.messages.insert(insert_at, tool_message)
+        clear_pending_input_request(session.metadata)
+        logger.info(
+            "Resumed suspended input request {} in session {}",
+            str(pending.get("interaction_id") or "")[:8],
+            ctx.session_key,
+        )
+        self.sessions.save(session)
 
     async def _compact_session(self, ctx: TurnContext) -> None:
         session = ctx.require_session()
@@ -2154,7 +2202,7 @@ class AgentLoop:
             ctx.kind is TurnKind.USER
             and (ctx.final_content is None or not ctx.final_content.strip())
             and not ctx.suppress_response
-            and ctx.stop_reason != "tool_terminal"
+            and ctx.stop_reason not in {"tool_terminal", "awaiting_user"}
         ):
             ctx.final_content = EMPTY_FINAL_RESPONSE_MESSAGE
 

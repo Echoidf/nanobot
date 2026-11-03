@@ -1,15 +1,15 @@
-"""Publisher-side team assets: publish local assets and review submissions.
+"""Publisher-side team assets: review submissions from other instances.
 
 This module is the authenticated half of the team-asset contract. It never
 talks to a remote host — it only reads this instance's workspace and writes
-this instance's own ``published`` catalog and pending queue. Remote peers
+this instance's own ``published`` snapshots and pending queue. Remote peers
 reach this data only through the anonymous sidecar in
 ``nanodesk.team_assets.server``.
 
-Publishing a skill copies nothing but its ``SKILL.md``: the Agent Skills
-identity contract is re-validated here so a malformed local skill can never
-enter the catalog, and no executable resource from the skill directory is
-ever published.
+There is no local publish step: local skills and MCP servers are served
+live from the workspace and config. Only submissions from *other*
+instances land here, and only an approved submission is copied into
+``published``.
 """
 
 from __future__ import annotations
@@ -17,8 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
-from nanodesk.config.schema import Config
-from nanodesk.team_assets.bundles import sanitize_mcp_manifest
 from nanodesk.team_assets.store import (
     PublishedAsset,
     TeamAssetStore,
@@ -27,71 +25,52 @@ from nanodesk.team_assets.store import (
 
 __all__ = [
     "approve_team_submission",
+    "delete_team_submission",
     "list_team_submissions",
-    "publish_local_mcp",
-    "publish_local_skill",
     "reject_team_submission",
 ]
 
 
-def publish_local_skill(
-    workspace_path: Path,
-    skill_id: str,
-    version: str,
-    *,
-    description: str = "",
-) -> PublishedAsset:
-    """Publish one workspace skill as a fixed team asset version."""
-    normalize_version(version)
-    skill_file = workspace_path.expanduser() / "skills" / skill_id / "SKILL.md"
-    if not skill_file.is_file():
-        raise ValueError(f"skill not found in this workspace: {skill_id}")
-    return TeamAssetStore(workspace_path).publish_skill_version(
-        skill_id=skill_id,
-        version=version,
-        skill_markdown=skill_file.read_text(encoding="utf-8"),
-        description=description,
-    )
+def list_team_submissions(
+    workspace_path: Path, *, include_reviewed: bool = False
+) -> list[dict[str, Any]]:
+    """Return submissions for the reviewer surface.
 
-
-def publish_local_mcp(
-    config: Config,
-    workspace_path: Path,
-    name: str,
-    version: str,
-) -> PublishedAsset:
-    """Publish one configured MCP server definition, minus its credentials."""
-    normalize_version(version)
-    server = config.tools.mcp_servers.get(name)
-    if server is None:
-        raise ValueError(f"MCP server is not configured: {name}")
-    # Explicitly drop env/headers: those hold the credentials that must
-    # never leave this instance.
-    manifest = sanitize_mcp_manifest(
-        {
-            "type": server.type,
-            "auth": server.auth,
-            "command": server.command,
-            "args": list(server.args),
-            "cwd": server.cwd,
-            "url": server.url,
-            "tool_timeout": server.tool_timeout,
-            "enabled_tools": list(server.enabled_tools),
-            "enabled": server.enabled,
-            "description": server.description,
-            "docs_url": server.docs_url,
-        }
-    )
-    return TeamAssetStore(workspace_path).publish_mcp_version(
-        name=name, version=version, manifest=manifest
-    )
-
-
-def list_team_submissions(workspace_path: Path) -> list[dict[str, Any]]:
-    """Return pending submissions newest-last for the reviewer surface."""
+    Pending items come first (oldest first, so nothing starves); reviewed
+    items follow newest first. Pass ``include_reviewed`` for the full
+    history with ``status``/``reviewer``/``reviewed_at`` attached.
+    """
     records = TeamAssetStore(workspace_path).list_pending()
-    ordered = sorted(records, key=lambda item: float(item.get("created_at", 0.0)))
-    return [record for record in ordered if record.get("status") == "pending"]
+    if not include_reviewed:
+        pending_only = [item for item in records if item.get("status") == "pending"]
+        return sorted(pending_only, key=lambda item: float(item.get("created_at", 0.0)))
+    pending = sorted(
+        (item for item in records if item.get("status") == "pending"),
+        key=lambda item: float(item.get("created_at", 0.0)),
+    )
+    reviewed = sorted(
+        (item for item in records if item.get("status") != "pending"),
+        key=lambda item: float(item.get("reviewed_at", item.get("created_at", 0.0))),
+        reverse=True,
+    )
+    return [*pending, *reviewed]
+
+
+def delete_team_submission(workspace_path: Path, submission_id: str) -> dict[str, Any]:
+    """Delete one reviewed submission record without keeping an audit trail.
+
+    Pending submissions must go through approve/reject; only reviewed
+    records can be deleted (e.g. together with a takedown).
+    """
+    store = TeamAssetStore(workspace_path)
+    try:
+        record = store.get_pending(submission_id)
+    except FileNotFoundError as exc:
+        raise ValueError("submission not found") from exc
+    if record.get("status") == "pending":
+        raise ValueError("pending submissions must be approved or rejected first")
+    store.delete_pending(submission_id)
+    return {"submission_id": submission_id, "deleted": True}
 
 
 def approve_team_submission(
@@ -125,6 +104,7 @@ def approve_team_submission(
             version=published_version,
             skill_markdown=content,
             description=str(record.get("note", "")),
+            origin="remote",
         )
     else:
         manifest = record.get("manifest")
@@ -134,6 +114,7 @@ def approve_team_submission(
             name=asset_id,
             version=published_version,
             manifest=cast(dict[str, Any], manifest),
+            origin="remote",
         )
 
     store.set_pending_status(submission_id, "approved", reviewer=reviewer)

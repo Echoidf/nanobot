@@ -214,6 +214,18 @@ class Tool(ABC):
         """Whether this tool should run alone even if concurrency is enabled."""
         return False
 
+    @property
+    def suspends_turn(self) -> bool:
+        """Whether calling this tool suspends the turn to wait for user input.
+
+        A suspending tool is never executed. The runner ends the run with
+        ``stop_reason="awaiting_user"`` and the next user message resumes the
+        same turn with the answer as the tool result (Codex request_user_input
+        semantics). Plain questions use ``request_user_input``; option lists
+        use ``ask_cards``.
+        """
+        return False
+
     # --- Plugin metadata ---
 
     config_key: str = ""

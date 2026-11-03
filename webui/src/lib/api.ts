@@ -593,23 +593,6 @@ export async function installTeamAsset(
   );
 }
 
-export async function publishTeamAsset(
-  transport: WebUIMutationTransport,
-  input: {
-    kind: TeamAssetKind;
-    asset_id: string;
-    version: string;
-    description?: string;
-  },
-): Promise<TeamAssetsPayload> {
-  return mutation<TeamAssetsPayload>(transport, "team.publish", {
-    kind: input.kind,
-    asset_id: input.asset_id,
-    version: input.version,
-    description: input.description ?? "",
-  });
-}
-
 export async function approveTeamSubmission(
   transport: WebUIMutationTransport,
   input: { submission_id: string; version?: string; reviewer?: string },
@@ -631,6 +614,42 @@ export async function rejectTeamSubmission(
   });
 }
 
+export async function deleteTeamSubmission(
+  transport: WebUIMutationTransport,
+  submissionId: string,
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.submission.delete", {
+    submission_id: submissionId,
+  });
+}
+
+export async function unpublishTeamAsset(
+  transport: WebUIMutationTransport,
+  input: { kind: TeamAssetKind; asset_id: string; version: string },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(transport, "team.unpublish", {
+    kind: input.kind,
+    asset_id: input.asset_id,
+    version: input.version,
+  });
+}
+
+export async function installPublishedToLocal(
+  transport: WebUIMutationTransport,
+  input: { kind: TeamAssetKind; asset_id: string; version: string },
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(
+    transport,
+    "team.install_local",
+    {
+      kind: input.kind,
+      asset_id: input.asset_id,
+      version: input.version,
+    },
+    PACKAGE_MUTATION_TIMEOUT_MS,
+  );
+}
+
 export async function submitTeamAsset(
   transport: WebUIMutationTransport,
   input: {
@@ -641,8 +660,8 @@ export async function submitTeamAsset(
     submitter: string;
     note?: string;
   },
-): Promise<{ last_action: Record<string, unknown> }> {
-  return mutation<{ last_action: Record<string, unknown> }>(
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(
     transport,
     "team.submit",
     {
@@ -653,6 +672,18 @@ export async function submitTeamAsset(
       submitter: input.submitter,
       note: input.note ?? "",
     },
+    PACKAGE_MUTATION_TIMEOUT_MS,
+  );
+}
+
+/** Re-check recorded submissions' review state at their peer instances. */
+export async function refreshTeamSubmitted(
+  transport: WebUIMutationTransport,
+): Promise<TeamAssetsPayload> {
+  return mutation<TeamAssetsPayload>(
+    transport,
+    "team.submitted.refresh",
+    {},
     PACKAGE_MUTATION_TIMEOUT_MS,
   );
 }

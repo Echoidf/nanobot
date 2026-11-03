@@ -24,6 +24,25 @@ def _isolate_nanodesk_log_activation() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_config_path_cache() -> Iterator[None]:
+    """Reset the global config-path cache around every test.
+
+    ``set_config_path()`` mutates module state that outlives a test; without a
+    reset, ``get_config_path()`` in a later test silently returns another
+    test's config file, which flips default-vs-explicit instance resolution
+    and, in real terms, which ``~/.nanodesk`` the code under test writes to.
+    """
+    from nanodesk.config import loader
+
+    previous = loader._current_config_path
+    loader._current_config_path = None
+    try:
+        yield
+    finally:
+        loader._current_config_path = previous
+
+
+@pytest.fixture(autouse=True)
 def _isolate_sessions_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Redirect session storage away from the real active config data directory.
 
